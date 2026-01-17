@@ -45,7 +45,7 @@ Config is stored in the OS app-data directory:
 See `docs/config.md`.
 
 ## File structure
-
+```
 erp-connector/
 ├─ AGENTS.md
 ├─ README.md
@@ -142,7 +142,7 @@ erp-connector/
    ├─ uninstall-service-windows.ps1
    ├─ systemd-install.sh
    └─ systemd-uninstall.sh
-
+```
 
 ## Authentication
 
