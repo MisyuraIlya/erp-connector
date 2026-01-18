@@ -1,8 +1,11 @@
 module erp-connector
 
-go 1.24.2
+go 1.25
 
-require fyne.io/fyne/v2 v2.7.2
+require (
+	fyne.io/fyne/v2 v2.7.2
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	fyne.io/systray v1.12.0 // indirect
@@ -36,5 +39,4 @@ require (
 	golang.org/x/net v0.35.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
