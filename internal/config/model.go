@@ -8,19 +8,32 @@ const (
 )
 
 type DBConfig struct {
-	Driver  string `yaml: "driver"`
-	Host    string `yaml: "host"`
-	Port    int    `yaml: "port"`
-	User    string `yaml: "user"`
-	Databse string `yaml: "database"`
+	Driver  string `yaml:"driver"`
+	Host    string `yaml:"host"`
+	Port    int    `yaml:"port"`
+	User    string `yaml:"user"`
+	Databse string `yaml:"database"`
 }
 
 type Config struct {
-	ERP          ERPType  `yaml: "erp"`
-	APIListen    string   `yaml: "apiListen"`
-	ImageFolders []string `yaml: "imageFolders"`
-	sendOrderDir string   `yaml: "sendOrderDir"`
-	DB           DBConfig `yaml: "db"`
+	ERP          ERPType  `yaml:"erp"`
+	APIListen    string   `yaml:"apiListen"`
+	ImageFolders []string `yaml:"imageFolders"`
+	sendOrderDir string   `yaml:"sendOrderDir"`
+	DB           DBConfig `yaml:"db"`
+}
+
+func ErpValues() []ERPType {
+	return []ERPType{ERPSAP, ERPHasavshevet}
+}
+
+func ErpOption() []string {
+	vals := ErpValues()
+	out := make([]string, 0, len(vals))
+	for _, v := range vals {
+		out = append(out, string(v))
+	}
+	return out
 }
 
 func Default() Config {

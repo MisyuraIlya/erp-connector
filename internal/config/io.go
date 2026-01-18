@@ -108,7 +108,7 @@ func Save(cfg Config) error {
 
 	if errRename != nil {
 		_ = os.Remove(tmpName)
-		return err
+		return errRename
 	}
 
 	return nil

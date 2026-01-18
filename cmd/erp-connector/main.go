@@ -19,7 +19,7 @@ func main() {
 		status.SetText("Error loading config: " + err.Error())
 	}
 
-	erpSelect := widget.NewSelect([]string{"SAP", "חשבשבת"}, func(string) {})
+	erpSelect := widget.NewSelect(config.ErpOption(), func(string) {})
 	erpSelect.SetSelected(string(cfg.ERP))
 
 	apiListenEnty := widget.NewEntry()
@@ -46,6 +46,7 @@ func main() {
 		saveBtn,
 		status,
 	))
+
 	w.Resize(fyne.NewSize(420, 240))
 	w.ShowAndRun()
 }
