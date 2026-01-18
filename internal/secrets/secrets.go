@@ -47,4 +47,74 @@ func Set(key string, value []byte) error {
 		return errFi
 	}
 
+	enc, err := encrypt(value)
+
+	if err != nil {
+		return err
+	}
+
+	tmp, err := os.CreateTemp(filepath.Dir(p), "secret-*.tmp")
+
+	if err != nil {
+		return err
+	}
+
+	tmpName := tmp.Name()
+	_ = tmp.Chmod(0o600)
+
+	_, errWrite := tmp.Write(enc)
+
+	if errWrite != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return errWrite
+	}
+
+	errSync := tmp.Sync()
+
+	if errSync != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return errSync
+	}
+
+	errC := tmp.Close()
+
+	if errC != nil {
+		_ = os.Remove(tmpName)
+		return errC
+	}
+
+	_ = os.Remove(p)
+
+	errRename := os.Rename(tmpName, p)
+
+	if errRename != nil {
+		_ = os.Remove(tmpName)
+		return err
+	}
+
+	return nil
+}
+
+func Get(key string) ([]byte, error) {
+	p, err := secretFilePath(key)
+
+	if err != nil {
+		return nil, err
+	}
+
+	b, err := os.ReadFile(p)
+
+	if err != nil {
+		return nil, err
+	}
+
+	dec, err := decrypt(b)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return dec, nil
 }
