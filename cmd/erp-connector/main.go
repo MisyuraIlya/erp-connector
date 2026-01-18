@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"erp-connector/internal/config"
+	"erp-connector/internal/db"
 	"erp-connector/internal/secrets"
 	"strconv"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -41,12 +44,42 @@ func main() {
 	userEntry.SetText(cfg.DB.User)
 
 	dbEntry := widget.NewEntry()
-	dbEntry.SetText(cfg.DB.Databse)
+	dbEntry.SetText(cfg.DB.Database)
 
 	passEntry := widget.NewPasswordEntry()
 
 	erpSelect := widget.NewSelect(config.ErpOption(), func(string) {})
 	erpSelect.SetSelected(string(cfg.ERP))
+
+	testBtn := widget.NewButton("Test connection", func() {
+		tmp := cfg
+		tmp.ERP = config.ERPType(erpSelect.Selected)
+		tmp.APIListen = apiListenEntry.Text
+		tmp.DB.Driver = config.DBDriver(driverSelect.Selected)
+		tmp.DB.Host = hostEntry.Text
+
+		p, err := strconv.Atoi(portEntry.Text)
+		if err != nil || p <= 0 || p > 65535 {
+			status.SetText("Invalid DB Port")
+			return
+		}
+
+		tmp.DB.Port = p
+		tmp.DB.User = userEntry.Text
+		tmp.DB.Database = dbEntry.Text
+
+		status.SetText("Testing connection...")
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+
+		errTest := db.TestConnection(ctx, tmp, passEntry.Text)
+		if errTest != nil {
+			status.SetText("Conntextion faild:" + errTest.Error())
+			return
+		}
+
+		status.SetText("Connection OK")
+	})
 
 	saveBtn := widget.NewButton("שמירה", func() {
 
@@ -64,7 +97,7 @@ func main() {
 
 		cfg.DB.Port = p
 		cfg.DB.User = userEntry.Text
-		cfg.DB.Databse = dbEntry.Text
+		cfg.DB.Database = dbEntry.Text
 
 		errPass := secrets.Set(dbPasswordKey(cfg.ERP), []byte(passEntry.Text))
 		if errPass != nil {
@@ -103,7 +136,7 @@ func main() {
 		widget.NewLabel("Password"),
 		passEntry,
 
-		saveBtn,
+		container.NewHBox(testBtn, saveBtn),
 		status,
 	))
 
