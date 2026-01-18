@@ -41,7 +41,7 @@ func Set(key string, value []byte) error {
 		return err
 	}
 
-	errFi := os.Mkdir(filepath.Dir(p), 0o755)
+	errFi := os.MkdirAll(filepath.Dir(p), 0o755)
 
 	if errFi != nil {
 		return errFi
