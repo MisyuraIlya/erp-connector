@@ -13,11 +13,11 @@ const (
 )
 
 type DBConfig struct {
-	Driver  DBDriver `yaml:"driver"`
-	Host    string   `yaml:"host"`
-	Port    int      `yaml:"port"`
-	User    string   `yaml:"user"`
-	Databse string   `yaml:"database"`
+	Driver   DBDriver `yaml:"driver"`
+	Host     string   `yaml:"host"`
+	Port     int      `yaml:"port"`
+	User     string   `yaml:"user"`
+	Database string   `yaml:"database"`
 }
 
 type Config struct {
@@ -61,11 +61,11 @@ func Default() Config {
 		ImageFolders: []string{},
 		sendOrderDir: "",
 		DB: DBConfig{
-			Driver:  "mssql",
-			Host:    "localhost",
-			Port:    1433,
-			Databse: "",
-			User:    "",
+			Driver:   "mssql",
+			Host:     "localhost",
+			Port:     1433,
+			Database: "",
+			User:     "",
 		},
 	}
 }
