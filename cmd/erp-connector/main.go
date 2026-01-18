@@ -2,12 +2,18 @@ package main
 
 import (
 	"erp-connector/internal/config"
+	"erp-connector/internal/secrets"
+	"strconv"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
+
+func dbPasswordKey(erp config.ERPType) string {
+	return "db_password_" + string(erp)
+}
 
 func main() {
 	a := app.New()
@@ -19,15 +25,52 @@ func main() {
 		status.SetText("Error loading config: " + err.Error())
 	}
 
+	apiListenEntry := widget.NewEntry()
+	apiListenEntry.SetText(cfg.APIListen)
+
+	driverSelect := widget.NewSelect(config.DBDriverOptions(), func(string) {})
+	driverSelect.SetSelected(string(cfg.DB.Driver))
+
+	hostEntry := widget.NewEntry()
+	hostEntry.SetText(cfg.DB.Host)
+
+	portEntry := widget.NewEntry()
+	portEntry.SetText(strconv.Itoa(cfg.DB.Port))
+
+	userEntry := widget.NewEntry()
+	userEntry.SetText(cfg.DB.User)
+
+	dbEntry := widget.NewEntry()
+	dbEntry.SetText(cfg.DB.Databse)
+
+	passEntry := widget.NewPasswordEntry()
+
 	erpSelect := widget.NewSelect(config.ErpOption(), func(string) {})
 	erpSelect.SetSelected(string(cfg.ERP))
 
-	apiListenEnty := widget.NewEntry()
-	apiListenEnty.SetText(cfg.APIListen)
-
 	saveBtn := widget.NewButton("שמירה", func() {
+
 		cfg.ERP = config.ERPType(erpSelect.Selected)
-		cfg.APIListen = apiListenEnty.Text
+		cfg.APIListen = apiListenEntry.Text
+		cfg.DB.Driver = config.DBDriver(driverSelect.Selected)
+		cfg.DB.Host = hostEntry.Text
+
+		p, err := strconv.Atoi(portEntry.Text)
+
+		if err != nil || p <= 0 || p > 65535 {
+			status.SetText("Invalid DB PORT")
+			return
+		}
+
+		cfg.DB.Port = p
+		cfg.DB.User = userEntry.Text
+		cfg.DB.Databse = dbEntry.Text
+
+		errPass := secrets.Set(dbPasswordKey(cfg.ERP), []byte(passEntry.Text))
+		if errPass != nil {
+			status.SetText("failed to save password: " + errPass.Error())
+			return
+		}
 
 		errSave := config.Save(cfg)
 		if errSave != nil {
@@ -41,12 +84,29 @@ func main() {
 	w.SetContent(container.NewVBox(
 		widget.NewLabel("ERP"),
 		erpSelect,
+
 		widget.NewLabel("API Listen (host:port)"),
-		apiListenEnty,
+		apiListenEntry,
+
+		widget.NewSeparator(),
+		widget.NewLabel("DB Settings"),
+		widget.NewLabel("Driver"),
+		driverSelect,
+		widget.NewLabel("Host"),
+		hostEntry,
+		widget.NewLabel("Port"),
+		portEntry,
+		widget.NewLabel("User"),
+		userEntry,
+		widget.NewLabel("Database"),
+		dbEntry,
+		widget.NewLabel("Password"),
+		passEntry,
+
 		saveBtn,
 		status,
 	))
 
-	w.Resize(fyne.NewSize(420, 240))
+	w.Resize(fyne.NewSize(520, 690))
 	w.ShowAndRun()
 }
