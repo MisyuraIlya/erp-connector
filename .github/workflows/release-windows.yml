@@ -1,0 +1,40 @@
+name: release-windows
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install MinGW (for Fyne)
+        run: choco install mingw -y
+
+      - name: Build Windows executables
+        shell: bash
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w" -o "dist/erp-connector-${VERSION}-windows-amd64.exe" ./cmd/erp-connector
+          go build -trimpath -ldflags "-s -w" -o "dist/erp-connectord-${VERSION}-windows-amd64.exe" ./cmd/erp-connectord
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe
+          generate_release_notes: true
