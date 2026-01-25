@@ -26,13 +26,13 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir={#OutputDir}
 OutputBaseFilename=erp-connector-setup-{#AppVersion}
-SetupIconFile={#BuildDir}\{#AppExe}
 Compression=lzma
 SolidCompression=yes
 ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=admin
 UninstallDisplayIcon={app}\{#AppExe}
+SetupIconFile=assets\installer\icon.ico
 
 [Files]
 Source: "{#BuildDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
