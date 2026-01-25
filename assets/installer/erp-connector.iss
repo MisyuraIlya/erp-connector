@@ -39,7 +39,7 @@ Source: "{#BuildDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\{#ServiceExe}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -WindowStyle Hidden -Command ""Start-Process -FilePath '{app}\{#AppExe}' -WorkingDirectory '{app}' -Verb RunAs"""; WorkingDir: "{app}"; IconFilename: "{app}\{#AppExe}"
 
 [Run]
 Filename: "{cmd}"; Parameters: "/C sc.exe create {#ServiceName} binPath= ""{app}\{#ServiceExe}"" start= auto >nul 2>&1 & exit /b 0"; Flags: runhidden
