@@ -51,10 +51,12 @@ jobs:
           mkdir -p dist
           go build -trimpath -ldflags "-s -w" -o "dist/erp-connector-${VERSION}-windows-amd64.exe" ./cmd/erp-connector
           go build -trimpath -ldflags "-s -w" -o "dist/erp-connectord-${VERSION}-windows-amd64.exe" ./cmd/erp-connectord
+          powershell.exe -NoProfile -Command "Compress-Archive -Path \"dist/erp-connector-${VERSION}-windows-amd64.exe\" -DestinationPath \"dist/erp-connector-${VERSION}-windows-amd64.zip\" -Force"
+          powershell.exe -NoProfile -Command "Compress-Archive -Path \"dist/erp-connectord-${VERSION}-windows-amd64.exe\" -DestinationPath \"dist/erp-connectord-${VERSION}-windows-amd64.zip\" -Force"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          files: dist/*.exe
+          files: dist/*.exe,dist/*.zip
           generate_release_notes: true
