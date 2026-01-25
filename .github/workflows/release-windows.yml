@@ -40,7 +40,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install MinGW (for Fyne)
-        run: choco install mingw -y
+        run: choco install mingw innosetup -y
 
       - name: Build Windows executables
         shell: bash
@@ -48,15 +48,21 @@ jobs:
           VERSION: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
-          mkdir -p dist
-          go build -trimpath -ldflags "-s -w" -o "dist/erp-connector-${VERSION}-windows-amd64.exe" ./cmd/erp-connector
-          go build -trimpath -ldflags "-s -w" -o "dist/erp-connectord-${VERSION}-windows-amd64.exe" ./cmd/erp-connectord
-          powershell.exe -NoProfile -Command "Compress-Archive -Path \"dist/erp-connector-${VERSION}-windows-amd64.exe\" -DestinationPath \"dist/erp-connector-${VERSION}-windows-amd64.zip\" -Force"
-          powershell.exe -NoProfile -Command "Compress-Archive -Path \"dist/erp-connectord-${VERSION}-windows-amd64.exe\" -DestinationPath \"dist/erp-connectord-${VERSION}-windows-amd64.zip\" -Force"
+          mkdir -p dist/bin
+          go build -trimpath -ldflags "-s -w" -o "dist/bin/erp-connector.exe" ./cmd/erp-connector
+          go build -trimpath -ldflags "-s -w" -o "dist/bin/erp-connectord.exe" ./cmd/erp-connectord
+
+      - name: Build installer
+        shell: powershell
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          $appVersion = $env:VERSION.TrimStart("v")
+          iscc /DAppVersion=$appVersion /DBuildDir="$PWD\\dist\\bin" /DOutputDir="$PWD\\dist" assets\\installer\\erp-connector.iss
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          files: dist/*.exe,dist/*.zip
+          files: dist/erp-connector-setup-*.exe
           generate_release_notes: true

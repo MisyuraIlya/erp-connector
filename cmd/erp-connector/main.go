@@ -36,14 +36,17 @@ func newBearerToken() (string, error) {
 
 func findConnectordBinary() (string, error) {
 	candidates := make([]string, 0, 4)
+	searchDirs := make([]string, 0, 2)
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
+		searchDirs = append(searchDirs, exeDir)
 		candidates = append(candidates,
 			filepath.Join(exeDir, "erp-connectord"),
 			filepath.Join(exeDir, "erp-connectord.exe"),
 		)
 	}
 	if wd, err := os.Getwd(); err == nil {
+		searchDirs = append(searchDirs, wd)
 		candidates = append(candidates,
 			filepath.Join(wd, "erp-connectord"),
 			filepath.Join(wd, "erp-connectord.exe"),
@@ -60,6 +63,35 @@ func findConnectordBinary() (string, error) {
 	}
 	if p, err := exec.LookPath("erp-connectord.exe"); err == nil {
 		return p, nil
+	}
+	for _, dir := range searchDirs {
+		if dir == "" {
+			continue
+		}
+		matches, _ := filepath.Glob(filepath.Join(dir, "erp-connectord*.exe"))
+		if len(matches) == 0 {
+			matches, _ = filepath.Glob(filepath.Join(dir, "erp-connectord*"))
+		}
+		if len(matches) == 0 {
+			continue
+		}
+		best := matches[0]
+		bestInfo, err := os.Stat(best)
+		if err != nil {
+			continue
+		}
+		bestTime := bestInfo.ModTime()
+		for _, candidate := range matches[1:] {
+			info, err := os.Stat(candidate)
+			if err != nil {
+				continue
+			}
+			if info.ModTime().After(bestTime) {
+				best = candidate
+				bestTime = info.ModTime()
+			}
+		}
+		return best, nil
 	}
 	return "", fmt.Errorf("erp-connectord binary not found")
 }

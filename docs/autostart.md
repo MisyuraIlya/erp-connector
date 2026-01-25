@@ -5,8 +5,13 @@ The REST API daemon (`erp-connectord`) must start automatically after machine re
 ## Windows (preferred)
 Run daemon as a Windows Service.
 Options:
-1) Native Go Windows service implementation (`internal/platform/autostart/windows.go`)
+1) Native Go Windows service mode (built into `erp-connectord`)
 2) Wrapper tools (less ideal, but fast) like NSSM (documented internally if used)
+
+Installer behavior (recommended):
+- Install both `erp-connector.exe` (UI) and `erp-connectord.exe` (daemon) under `Program Files`.
+- Register `erp-connectord` as a Windows Service set to `start=auto`.
+- Create a desktop shortcut only for the UI.
 
 Minimum behavior:
 - Service starts on boot
