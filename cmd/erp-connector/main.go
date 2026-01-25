@@ -6,11 +6,13 @@ import (
 	"erp-connector/internal/db"
 	"erp-connector/internal/secrets"
 	"strconv"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -50,6 +52,40 @@ func main() {
 
 	erpSelect := widget.NewSelect(config.ErpOption(), func(string) {})
 	erpSelect.SetSelected(string(cfg.ERP))
+
+	folderEntries := []*widget.Entry{}
+	foldersBox := container.NewVBox()
+	addFolderRow := func(path string) {
+		entry := widget.NewEntry()
+		entry.SetText(path)
+		browseBtn := widget.NewButton("Browse", func() {
+			dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
+				if err != nil {
+					status.SetText("Folder selection error: " + err.Error())
+					return
+				}
+				if uri == nil {
+					return
+				}
+				entry.SetText(uri.Path())
+			}, w)
+		})
+		folderEntries = append(folderEntries, entry)
+		foldersBox.Add(container.NewHBox(entry, browseBtn))
+		foldersBox.Refresh()
+	}
+
+	if len(cfg.ImageFolders) == 0 {
+		addFolderRow("")
+	} else {
+		for _, p := range cfg.ImageFolders {
+			addFolderRow(p)
+		}
+	}
+
+	addFolderBtn := widget.NewButton("Add folder", func() {
+		addFolderRow("")
+	})
 
 	testBtn := widget.NewButton("Test connection", func() {
 		tmp := cfg
@@ -99,6 +135,16 @@ func main() {
 		cfg.DB.User = userEntry.Text
 		cfg.DB.Database = dbEntry.Text
 
+		imageFolders := make([]string, 0, len(folderEntries))
+		for _, entry := range folderEntries {
+			path := strings.TrimSpace(entry.Text)
+			if path == "" {
+				continue
+			}
+			imageFolders = append(imageFolders, path)
+		}
+		cfg.ImageFolders = imageFolders
+
 		errPass := secrets.Set(dbPasswordKey(cfg.ERP), []byte(passEntry.Text))
 		if errPass != nil {
 			status.SetText("failed to save password: " + errPass.Error())
@@ -135,6 +181,11 @@ func main() {
 		dbEntry,
 		widget.NewLabel("Password"),
 		passEntry,
+
+		widget.NewSeparator(),
+		widget.NewLabel("Image folders"),
+		foldersBox,
+		addFolderBtn,
 
 		container.NewHBox(testBtn, saveBtn),
 		status,
