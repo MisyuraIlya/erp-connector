@@ -42,10 +42,10 @@ Source: "{#BuildDir}\{#ServiceExe}"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"
 
 [Run]
-Filename: "sc.exe"; Parameters: "create {#ServiceName} binPath= ""{app}\{#ServiceExe}"" start= auto"; Flags: runhidden ignoreerrors
-Filename: "sc.exe"; Parameters: "description {#ServiceName} ""ERP Connector API Service"""; Flags: runhidden ignoreerrors
-Filename: "sc.exe"; Parameters: "start {#ServiceName}"; Flags: runhidden ignoreerrors
+Filename: "{cmd}"; Parameters: "/C sc.exe create {#ServiceName} binPath= ""{app}\{#ServiceExe}"" start= auto >nul 2>&1 & exit /b 0"; Flags: runhidden
+Filename: "{cmd}"; Parameters: "/C sc.exe description {#ServiceName} ""ERP Connector API Service"" >nul 2>&1 & exit /b 0"; Flags: runhidden
+Filename: "{cmd}"; Parameters: "/C sc.exe start {#ServiceName} >nul 2>&1 & exit /b 0"; Flags: runhidden
 
 [UninstallRun]
-Filename: "sc.exe"; Parameters: "stop {#ServiceName}"; Flags: runhidden ignoreerrors
-Filename: "sc.exe"; Parameters: "delete {#ServiceName}"; Flags: runhidden ignoreerrors
+Filename: "{cmd}"; Parameters: "/C sc.exe stop {#ServiceName} >nul 2>&1 & exit /b 0"; Flags: runhidden
+Filename: "{cmd}"; Parameters: "/C sc.exe delete {#ServiceName} >nul 2>&1 & exit /b 0"; Flags: runhidden
