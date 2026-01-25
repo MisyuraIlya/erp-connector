@@ -46,13 +46,6 @@ Errors:
 ```
 
 ## Image folders
-- `GET /api/folders/images`
-
-Response:
-```json
-{ "folders": ["..."] }
-```
-
 - `GET /api/folders/list`
 
 Response:

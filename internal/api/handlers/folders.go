@@ -8,13 +8,6 @@ import (
 	"erp-connector/internal/files"
 )
 
-func NewListImageFoldersHandler(imageFolders []string) http.HandlerFunc {
-	resp := dto.ImageFoldersResponse{Folders: append([]string(nil), imageFolders...)}
-	return func(w http.ResponseWriter, r *http.Request) {
-		utils.WriteJSON(w, http.StatusOK, resp)
-	}
-}
-
 func NewListFolderFilesHandler(imageFolders []string) http.HandlerFunc {
 	allowed, cfgErr := files.BuildAllowedFolders(imageFolders)
 	return func(w http.ResponseWriter, r *http.Request) {
