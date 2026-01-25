@@ -5,6 +5,24 @@
 - Linux: `~/.config/erp-connector/config.yaml`
 - macOS: `~/Library/Application Support/erp-connector/config.yaml`
 
+## Current schema (implemented)
+
+```yaml
+erp: "hasavshevet" # or "sap"
+apiListen: "127.0.0.1:8080"
+debug: false
+bearerToken: "CHANGE_ME"
+imageFolders:
+  - "P:\\images"
+sendOrderDir: "P:\\send-orders" # required only when erp=hasavshevet
+db:
+  driver: "mssql"
+  host: "localhost"
+  port: 1433
+  user: "sa"
+  database: "ERPDB"
+```
+
 ## Config schema (recommended)
 
 ```yaml

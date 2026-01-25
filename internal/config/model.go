@@ -23,8 +23,10 @@ type DBConfig struct {
 type Config struct {
 	ERP          ERPType  `yaml:"erp"`
 	APIListen    string   `yaml:"apiListen"`
+	Debug        bool     `yaml:"debug"`
+	BearerToken  string   `yaml:"bearerToken"`
 	ImageFolders []string `yaml:"imageFolders"`
-	sendOrderDir string   `yaml:"sendOrderDir"`
+	SendOrderDir string   `yaml:"sendOrderDir"`
 	DB           DBConfig `yaml:"db"`
 }
 
@@ -58,8 +60,10 @@ func Default() Config {
 	return Config{
 		ERP:          ERPHasavshevet,
 		APIListen:    "127.0.0.1:8080",
+		Debug:        false,
+		BearerToken:  "",
 		ImageFolders: []string{},
-		sendOrderDir: "",
+		SendOrderDir: "",
 		DB: DBConfig{
 			Driver:   "mssql",
 			Host:     "localhost",

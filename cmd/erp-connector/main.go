@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"erp-connector/internal/config"
 	"erp-connector/internal/db"
 	"erp-connector/internal/secrets"
@@ -20,6 +22,14 @@ func dbPasswordKey(erp config.ERPType) string {
 	return "db_password_" + string(erp)
 }
 
+func newBearerToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
 func main() {
 	a := app.New()
 	w := a.NewWindow("Digitrage Erp Connector")
@@ -32,6 +42,21 @@ func main() {
 
 	apiListenEntry := widget.NewEntry()
 	apiListenEntry.SetText(cfg.APIListen)
+
+	debugCheck := widget.NewCheck("Debug mode", nil)
+	debugCheck.SetChecked(cfg.Debug)
+
+	bearerTokenEntry := widget.NewEntry()
+	bearerTokenEntry.SetText(cfg.BearerToken)
+	bearerTokenBtn := widget.NewButton("Generate key", func() {
+		token, err := newBearerToken()
+		if err != nil {
+			status.SetText("Failed to generate key: " + err.Error())
+			return
+		}
+		bearerTokenEntry.SetText(token)
+	})
+	bearerTokenRow := container.NewBorder(nil, nil, nil, bearerTokenBtn, bearerTokenEntry)
 
 	driverSelect := widget.NewSelect(config.DBDriverOptions(), func(string) {})
 	driverSelect.SetSelected(string(cfg.DB.Driver))
@@ -87,6 +112,38 @@ func main() {
 		addFolderRow("")
 	})
 
+	sendOrderEntry := widget.NewEntry()
+	sendOrderEntry.SetText(cfg.SendOrderDir)
+	sendOrderBrowseBtn := widget.NewButton("Browse", func() {
+		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
+			if err != nil {
+				status.SetText("Folder selection error: " + err.Error())
+				return
+			}
+			if uri == nil {
+				return
+			}
+			sendOrderEntry.SetText(uri.Path())
+		}, w)
+	})
+	sendOrderRow := container.NewBorder(nil, nil, nil, sendOrderBrowseBtn, sendOrderEntry)
+	sendOrderBox := container.NewVBox(
+		widget.NewLabel("Send order folder"),
+		sendOrderRow,
+	)
+
+	updateSendOrderVisibility := func(erp config.ERPType) {
+		if erp == config.ERPHasavshevet {
+			sendOrderBox.Show()
+			return
+		}
+		sendOrderBox.Hide()
+	}
+	erpSelect.OnChanged = func(selected string) {
+		updateSendOrderVisibility(config.ERPType(selected))
+	}
+	updateSendOrderVisibility(cfg.ERP)
+
 	testBtn := widget.NewButton("Test connection", func() {
 		tmp := cfg
 		tmp.ERP = config.ERPType(erpSelect.Selected)
@@ -121,6 +178,8 @@ func main() {
 
 		cfg.ERP = config.ERPType(erpSelect.Selected)
 		cfg.APIListen = apiListenEntry.Text
+		cfg.Debug = debugCheck.Checked
+		cfg.BearerToken = strings.TrimSpace(bearerTokenEntry.Text)
 		cfg.DB.Driver = config.DBDriver(driverSelect.Selected)
 		cfg.DB.Host = hostEntry.Text
 
@@ -145,6 +204,12 @@ func main() {
 		}
 		cfg.ImageFolders = imageFolders
 
+		if cfg.ERP == config.ERPHasavshevet {
+			cfg.SendOrderDir = strings.TrimSpace(sendOrderEntry.Text)
+		} else {
+			cfg.SendOrderDir = ""
+		}
+
 		errPass := secrets.Set(dbPasswordKey(cfg.ERP), []byte(passEntry.Text))
 		if errPass != nil {
 			status.SetText("failed to save password: " + errPass.Error())
@@ -160,12 +225,15 @@ func main() {
 		status.SetText("נשמר בהצלחה.")
 	})
 
-	w.SetContent(container.NewVBox(
+	content := container.NewVBox(
 		widget.NewLabel("ERP"),
 		erpSelect,
 
 		widget.NewLabel("API Listen (host:port)"),
 		apiListenEntry,
+		debugCheck,
+		widget.NewLabel("Bearer token"),
+		bearerTokenRow,
 
 		widget.NewSeparator(),
 		widget.NewLabel("DB Settings"),
@@ -186,11 +254,16 @@ func main() {
 		widget.NewLabel("Image folders"),
 		foldersBox,
 		addFolderBtn,
+		sendOrderBox,
 
 		container.NewHBox(testBtn, saveBtn),
 		status,
-	))
+	)
+
+	scroll := container.NewVScroll(content)
+	w.SetContent(scroll)
 
 	w.Resize(fyne.NewSize(520, 690))
+	w.SetFixedSize(false)
 	w.ShowAndRun()
 }
