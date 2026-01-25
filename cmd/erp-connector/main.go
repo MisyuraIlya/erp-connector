@@ -7,6 +7,10 @@ import (
 	"erp-connector/internal/config"
 	"erp-connector/internal/db"
 	"erp-connector/internal/secrets"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +32,36 @@ func newBearerToken() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func findConnectordBinary() (string, error) {
+	candidates := make([]string, 0, 4)
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "erp-connectord"),
+			filepath.Join(exeDir, "erp-connectord.exe"),
+		)
+	}
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(wd, "erp-connectord"),
+			filepath.Join(wd, "erp-connectord.exe"),
+		)
+	}
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			return candidate, nil
+		}
+	}
+	if p, err := exec.LookPath("erp-connectord"); err == nil {
+		return p, nil
+	}
+	if p, err := exec.LookPath("erp-connectord.exe"); err == nil {
+		return p, nil
+	}
+	return "", fmt.Errorf("erp-connectord binary not found")
 }
 
 func main() {
@@ -175,8 +209,7 @@ func main() {
 		status.SetText("Connection OK")
 	})
 
-	saveBtn := widget.NewButton("שמירה", func() {
-
+	saveConfig := func() error {
 		cfg.ERP = config.ERPType(erpSelect.Selected)
 		cfg.APIListen = apiListenEntry.Text
 		cfg.Debug = debugCheck.Checked
@@ -187,8 +220,7 @@ func main() {
 		p, err := strconv.Atoi(portEntry.Text)
 
 		if err != nil || p <= 0 || p > 65535 {
-			status.SetText("Invalid DB PORT")
-			return
+			return fmt.Errorf("Invalid DB PORT")
 		}
 
 		cfg.DB.Port = p
@@ -214,18 +246,45 @@ func main() {
 		if passEntry.Text != "" {
 			errPass := secrets.Set(dbPasswordKey(cfg.ERP), []byte(passEntry.Text))
 			if errPass != nil {
-				status.SetText("failed to save password: " + errPass.Error())
-				return
+				return fmt.Errorf("failed to save password: %s", errPass.Error())
 			}
 		}
 
 		errSave := config.Save(cfg)
 		if errSave != nil {
-			status.SetText("Error saving config: " + errSave.Error())
+			return fmt.Errorf("Error saving config: %s", errSave.Error())
+		}
+		return nil
+	}
+
+	saveBtn := widget.NewButton("שמירה", func() {
+		if err := saveConfig(); err != nil {
+			status.SetText(err.Error())
 			return
 		}
-
 		status.SetText("נשמר בהצלחה.")
+	})
+
+	startServerBtn := widget.NewButton("Start server", func() {
+		if err := saveConfig(); err != nil {
+			status.SetText(err.Error())
+			return
+		}
+		daemonPath, err := findConnectordBinary()
+		if err != nil {
+			status.SetText("Start failed: " + err.Error())
+			return
+		}
+		cmd := exec.Command(daemonPath)
+		if err := cmd.Start(); err != nil {
+			status.SetText("Failed to start server: " + err.Error())
+			return
+		}
+		if err := cmd.Process.Release(); err != nil {
+			status.SetText("Server started, but release failed: " + err.Error())
+			return
+		}
+		status.SetText("Server started.")
 	})
 
 	content := container.NewVBox(
@@ -259,7 +318,7 @@ func main() {
 		addFolderBtn,
 		sendOrderBox,
 
-		container.NewHBox(testBtn, saveBtn),
+		container.NewHBox(testBtn, saveBtn, startServerBtn),
 		status,
 	)
 
