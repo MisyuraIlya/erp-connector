@@ -1,7 +1,7 @@
 package api
 
 import (
-	"encoding/json"
+	"database/sql"
 	"errors"
 	"net"
 	"net/http"
@@ -9,16 +9,20 @@ import (
 	"strings"
 	"time"
 
+	"erp-connector/internal/api/handlers"
+	"erp-connector/internal/api/middleware"
+	"erp-connector/internal/api/utils"
 	"erp-connector/internal/config"
+	"erp-connector/internal/logger"
 )
 
-type ErrorResponse struct {
-	Error   string         `json:"error"`
-	Code    string         `json:"code"`
-	Details map[string]any `json:"details,omitempty"`
+type ServerDeps struct {
+	DBPassword string
+	DB         *sql.DB
+	Logger     logger.LoggerService
 }
 
-func NewServer(cfg config.Config) (*http.Server, error) {
+func NewServer(cfg config.Config, deps ServerDeps) (*http.Server, error) {
 	addr := strings.TrimSpace(cfg.APIListen)
 	if err := validateListenAddr(addr); err != nil {
 		return nil, err
@@ -30,8 +34,27 @@ func NewServer(cfg config.Config) (*http.Server, error) {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("/api/health", authMiddleware(token, http.HandlerFunc(healthHandler)))
-	mux.Handle("/api/", authMiddleware(token, http.HandlerFunc(notFoundHandler)))
+	withAuth := func(h http.Handler) http.Handler {
+		return middleware.Auth(token, h)
+	}
+	withLog := func(h http.Handler) http.Handler {
+		return middleware.Logging(deps.Logger, cfg.Debug, h)
+	}
+	wrap := func(h http.Handler) http.Handler {
+		return withLog(withAuth(h))
+	}
+
+	healthHandler := handlers.NewHealthHandler(cfg, deps.DBPassword)
+	sqlHandler := handlers.NewSQLHandler(deps.DB)
+
+	mux.Handle("GET /api/health", wrap(healthHandler))
+	mux.Handle("POST /api/sql", wrap(sqlHandler))
+	mux.Handle("GET /api/folders/images", wrap(http.HandlerFunc(handlers.ListImageFolders)))
+	mux.Handle("POST /api/folders/list", wrap(http.HandlerFunc(handlers.ListFolderFiles)))
+	mux.Handle("POST /api/file/", wrap(http.HandlerFunc(handlers.File)))
+	mux.Handle("POST /api/sendOrder", wrap(http.HandlerFunc(handlers.SendOrder)))
+	mux.Handle("POST /api/priceAndStockHandler", wrap(http.HandlerFunc(handlers.PriceAndStock)))
+	mux.Handle("/api/", wrap(http.HandlerFunc(NotFound)))
 
 	return &http.Server{
 		Addr:              addr,
@@ -64,40 +87,7 @@ func validateListenAddr(addr string) error {
 	return nil
 }
 
-func authMiddleware(token string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		parts := strings.Fields(r.Header.Get("Authorization"))
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || parts[1] != token {
-			writeError(w, http.StatusUnauthorized, "Unauthorized", "UNAUTHORIZED")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "Method not allowed", "METHOD_NOT_ALLOWED")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-}
-
-func notFoundHandler(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotFound, "Not found", "NOT_FOUND")
-}
-
-func writeError(w http.ResponseWriter, status int, message, code string) {
-	writeJSON(w, status, ErrorResponse{
-		Error:   message,
-		Code:    code,
-		Details: map[string]any{},
-	})
-}
-
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(payload)
+func NotFound(w http.ResponseWriter, r *http.Request) {
+	// TODO implement
+	utils.WriteError(w, http.StatusNotFound, "Not found", "NOT_FOUND", nil)
 }

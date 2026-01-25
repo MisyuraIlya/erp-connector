@@ -14,6 +14,8 @@ Response:
 ```json
 { "status": "ok" }
 ```
+Notes:
+- Performs a DB connection check; on failure returns `503` with error code `DB_UNAVAILABLE`.
 
 ## SQL
 - `POST /api/sql`
@@ -26,9 +28,15 @@ Request:
 Response:
 ```json
 {
-  "columns": ["..."],
+  "api": "...",
+  "status": "success",
+  "rowCount": 10,
   "rows": [ { "...": "..." } ],
-  "meta": { "rowCount": 10, "durationMs": 12 }
+  "recordsets": [
+    [
+      { "...": "..." }
+    ]
+  ]
 }
 ```
 

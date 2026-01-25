@@ -12,8 +12,14 @@ import (
 
 	"erp-connector/internal/api"
 	"erp-connector/internal/config"
+	"erp-connector/internal/db"
 	"erp-connector/internal/logger"
+	"erp-connector/internal/secrets"
 )
+
+func dbPasswordKey(erp config.ERPType) string {
+	return "db_password_" + string(erp)
+}
 
 func main() {
 	bootstrapLog := logger.NewStderr()
@@ -35,7 +41,27 @@ func main() {
 	}
 	defer logSvc.Close()
 
-	srv, err := api.NewServer(cfg)
+	dbPassword, dbPassErr := secrets.Get(dbPasswordKey(cfg.ERP))
+	if dbPassErr != nil {
+		logSvc.Error("failed to load db password", dbPassErr)
+	}
+	dbPasswordStr := ""
+	if dbPassErr == nil {
+		dbPasswordStr = string(dbPassword)
+	}
+
+	dbConn, err := db.Open(cfg, dbPasswordStr, db.DefaultOptions())
+	if err != nil {
+		logSvc.Error("db connection failed", err)
+		os.Exit(1)
+	}
+	defer dbConn.Close()
+
+	srv, err := api.NewServer(cfg, api.ServerDeps{
+		DBPassword: dbPasswordStr,
+		DB:         dbConn,
+		Logger:     logSvc,
+	})
 	if err != nil {
 		logSvc.Error("config validation error", err)
 		os.Exit(1)
