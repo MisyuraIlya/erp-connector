@@ -49,8 +49,7 @@ func NewServer(cfg config.Config, deps ServerDeps) (*http.Server, error) {
 
 	mux.Handle("GET /api/health", wrap(healthHandler))
 	mux.Handle("POST /api/sql", wrap(sqlHandler))
-	mux.Handle("GET /api/folders/images", wrap(http.HandlerFunc(handlers.ListImageFolders)))
-	mux.Handle("POST /api/folders/list", wrap(http.HandlerFunc(handlers.ListFolderFiles)))
+	mux.Handle("GET /api/folders/list", wrap(http.HandlerFunc(handlers.ListFolderFiles)))
 	mux.Handle("POST /api/file/", wrap(http.HandlerFunc(handlers.File)))
 	mux.Handle("POST /api/sendOrder", wrap(http.HandlerFunc(handlers.SendOrder)))
 	mux.Handle("POST /api/priceAndStockHandler", wrap(http.HandlerFunc(handlers.PriceAndStock)))
