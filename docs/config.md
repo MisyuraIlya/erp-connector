@@ -66,5 +66,6 @@ hasavshevet:
 ## Secrets
 
 - DB password and bearer token are secrets.
+- DB password is stored separately from config; the UI leaves the password field blank unless you enter a new value.
 - Do not log them.
 - Prefer OS-restricted permissions for the config file.

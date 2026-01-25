@@ -74,6 +74,7 @@ func main() {
 	dbEntry.SetText(cfg.DB.Database)
 
 	passEntry := widget.NewPasswordEntry()
+	passEntry.SetPlaceHolder("Leave blank to keep existing")
 
 	erpSelect := widget.NewSelect(config.ErpOption(), func(string) {})
 	erpSelect.SetSelected(string(cfg.ERP))
@@ -210,10 +211,12 @@ func main() {
 			cfg.SendOrderDir = ""
 		}
 
-		errPass := secrets.Set(dbPasswordKey(cfg.ERP), []byte(passEntry.Text))
-		if errPass != nil {
-			status.SetText("failed to save password: " + errPass.Error())
-			return
+		if passEntry.Text != "" {
+			errPass := secrets.Set(dbPasswordKey(cfg.ERP), []byte(passEntry.Text))
+			if errPass != nil {
+				status.SetText("failed to save password: " + errPass.Error())
+				return
+			}
 		}
 
 		errSave := config.Save(cfg)
