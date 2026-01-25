@@ -12,6 +12,7 @@ type PriceStockItem struct {
 	SKU              string             `json:"sku"`
 	Prices           map[string]float64 `json:"prices,omitempty"`
 	StockByWarehouse map[string]float64 `json:"stockByWarehouse,omitempty"`
+	Details          map[string]any     `json:"details,omitempty"`
 }
 
 type PriceStockMeta struct {

@@ -46,6 +46,7 @@ func NewServer(cfg config.Config, deps ServerDeps) (*http.Server, error) {
 
 	healthHandler := handlers.NewHealthHandler(cfg, deps.DBPassword)
 	sqlHandler := handlers.NewSQLHandler(deps.DB)
+	priceStockHandler := handlers.NewPriceAndStockHandler(cfg, deps.DB)
 	folderFilesHandler := handlers.NewListFolderFilesHandler(cfg.ImageFolders)
 	fileHandler := handlers.NewFileHandler(cfg.ImageFolders)
 
@@ -54,7 +55,7 @@ func NewServer(cfg config.Config, deps ServerDeps) (*http.Server, error) {
 	mux.Handle("GET /api/folders/list", wrap(folderFilesHandler))
 	mux.Handle("POST /api/file", wrap(fileHandler))
 	mux.Handle("POST /api/sendOrder", wrap(http.HandlerFunc(handlers.SendOrder)))
-	mux.Handle("POST /api/priceAndStockHandler", wrap(http.HandlerFunc(handlers.PriceAndStock)))
+	mux.Handle("POST /api/priceAndStockHandler", wrap(priceStockHandler))
 	mux.Handle("/api/", wrap(http.HandlerFunc(NotFound)))
 
 	return &http.Server{
