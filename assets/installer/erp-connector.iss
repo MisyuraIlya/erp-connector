@@ -32,7 +32,7 @@ ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 PrivilegesRequired=admin
 UninstallDisplayIcon={app}\{#AppExe}
-SetupIconFile=assets\installer\icon.ico
+SetupIconFile={#SourcePath}\icon.ico
 
 [Files]
 Source: "{#BuildDir}\{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
