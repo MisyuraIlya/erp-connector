@@ -53,24 +53,23 @@ Response:
 { "folders": ["..."] }
 ```
 
-- `POST /api/folders/list`
-
-Request:
-```json
-{ "folderPath": "..." }
-```
+- `GET /api/folders/list`
 
 Response:
 ```json
-{ "folderPath": "...", "files": ["..."] }
+{
+  "folders": [
+    { "folderPath": "...", "files": ["..."] }
+  ]
+}
 ```
 
 ## File fetch
-- `POST /api/file/{filename}`
+- `POST /api/file`
 
 Request:
 ```json
-{ "folderPath": "..." }
+{ "folderPath": "...", "fileName": "..." }
 ```
 
 Response:
