@@ -71,7 +71,7 @@ func main() {
 			}, w)
 		})
 		folderEntries = append(folderEntries, entry)
-		foldersBox.Add(container.NewHBox(entry, browseBtn))
+		foldersBox.Add(container.NewBorder(nil, nil, nil, browseBtn, entry))
 		foldersBox.Refresh()
 	}
 
@@ -83,7 +83,7 @@ func main() {
 		}
 	}
 
-	addFolderBtn := widget.NewButton("Add folder", func() {
+	addFolderBtn := widget.NewButton("Add new folder path", func() {
 		addFolderRow("")
 	})
 
