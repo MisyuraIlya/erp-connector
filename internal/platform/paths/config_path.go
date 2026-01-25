@@ -11,7 +11,7 @@ const AppName = "erp-connector"
 
 func ConfigFilePath() (string, error) {
 	switch runtime.GOOS {
-	case "winsows":
+	case "windows":
 		programData := os.Getenv("PROGRAMDATA")
 		if programData == "" {
 			programData = `C:\ProgramData`
