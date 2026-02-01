@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"erp-connector/internal/config"
 	"erp-connector/internal/db"
+	"erp-connector/internal/erp/hasavshevet"
+	"erp-connector/internal/logger"
 	"erp-connector/internal/secrets"
 	"fmt"
 	"os"
@@ -24,6 +26,20 @@ import (
 
 func dbPasswordKey(erp config.ERPType) string {
 	return "db_password_" + string(erp)
+}
+
+func resolveDBPassword(erp config.ERPType, entered string, required bool) (string, error) {
+	if entered != "" {
+		return entered, nil
+	}
+	if !required {
+		return "", nil
+	}
+	b, err := secrets.Get(dbPasswordKey(erp))
+	if err != nil {
+		return "", fmt.Errorf("db password is required to initialize GPRICE_Bulk: %w", err)
+	}
+	return string(b), nil
 }
 
 func newBearerToken() (string, error) {
@@ -101,6 +117,15 @@ func main() {
 	w := a.NewWindow("Digitrage Erp Connector")
 
 	cfg, err := config.LoadOrDefault()
+	logSvc, logErr := logger.New(cfg)
+	if logErr != nil {
+		logSvc = logger.NewStderr()
+		logSvc.Warn("logger init failed; using stderr")
+	}
+	defer func() {
+		_ = logSvc.Close()
+	}()
+
 	status := widget.NewLabel("")
 	if err != nil {
 		status.SetText("Error loading config: " + err.Error())
@@ -259,6 +284,10 @@ func main() {
 		cfg.DB.User = userEntry.Text
 		cfg.DB.Database = dbEntry.Text
 
+		if cfg.ERP == config.ERPHasavshevet && strings.TrimSpace(cfg.DB.Database) == "" {
+			return fmt.Errorf("DB database is required for Hasavshevet")
+		}
+
 		imageFolders := make([]string, 0, len(folderEntries))
 		for _, entry := range folderEntries {
 			path := strings.TrimSpace(entry.Text)
@@ -273,6 +302,33 @@ func main() {
 			cfg.SendOrderDir = strings.TrimSpace(sendOrderEntry.Text)
 		} else {
 			cfg.SendOrderDir = ""
+		}
+
+		password, err := resolveDBPassword(cfg.ERP, passEntry.Text, cfg.ERP == config.ERPHasavshevet)
+		if err != nil {
+			return err
+		}
+
+		if cfg.ERP == config.ERPHasavshevet {
+			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+			defer cancel()
+
+			dbConn, err := db.Open(cfg, password, db.DefaultOptions())
+			if err != nil {
+				return fmt.Errorf("failed to connect for GPRICE_Bulk setup: %w", err)
+			}
+			defer dbConn.Close()
+
+			created, err := hasavshevet.EnsureGPriceBulkProcedure(ctx, dbConn)
+			if err != nil {
+				logSvc.Error("failed to initialize GPRICE_Bulk", err)
+				return fmt.Errorf("failed to initialize GPRICE_Bulk: %w", err)
+			}
+			if created {
+				logSvc.Success("GPRICE_Bulk created")
+			} else {
+				logSvc.Info("GPRICE_Bulk already exists")
+			}
 		}
 
 		if passEntry.Text != "" {
