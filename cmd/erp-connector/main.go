@@ -113,6 +113,11 @@ func findConnectordBinary() (string, error) {
 }
 
 func main() {
+	if err := uiStartupGuard(); err != nil {
+		uiStartupAlert(err)
+		return
+	}
+
 	a := app.New()
 	w := a.NewWindow("Digitrage Erp Connector")
 
@@ -414,6 +419,8 @@ func main() {
 	w.SetContent(scroll)
 
 	w.Resize(fyne.NewSize(520, 690))
+	w.CenterOnScreen()
+	w.RequestFocus()
 	w.SetFixedSize(false)
 	w.ShowAndRun()
 }
