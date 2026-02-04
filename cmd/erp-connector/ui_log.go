@@ -42,6 +42,13 @@ func (l *uiLogger) Printf(format string, args ...any) {
 	l.logger.Printf(format, args...)
 }
 
+func (l *uiLogger) Writer() io.Writer {
+	if l == nil || l.file == nil {
+		return io.Discard
+	}
+	return l.file
+}
+
 func (l *uiLogger) Close() {
 	if l == nil || l.file == nil {
 		return

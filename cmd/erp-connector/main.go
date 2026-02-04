@@ -10,6 +10,7 @@ import (
 	"erp-connector/internal/logger"
 	"erp-connector/internal/secrets"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,6 +123,14 @@ func main() {
 		}
 	}()
 
+	log.SetOutput(uiLog.Writer())
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+	uiLog.Printf("startup begin")
+	if session := os.Getenv("SESSIONNAME"); session != "" {
+		uiLog.Printf("session: %s", session)
+	}
+
 	if err := uiStartupGuard(); err != nil {
 		uiLog.Printf("startup blocked: %v", err)
 		uiStartupAlert(err)
@@ -135,8 +144,11 @@ func main() {
 		uiLog.Printf("working dir: %s", wd)
 	}
 
+	uiLog.Printf("fyne app init")
 	a := app.New()
+	uiLog.Printf("fyne app ready")
 	w := a.NewWindow("Digitrage Erp Connector")
+	uiLog.Printf("window created")
 
 	cfg, err := config.LoadOrDefault()
 	if err == nil {
@@ -441,8 +453,12 @@ func main() {
 	w.SetContent(scroll)
 
 	w.Resize(fyne.NewSize(520, 690))
+	w.SetFixedSize(false)
+	uiLog.Printf("show window")
+	w.Show()
 	w.CenterOnScreen()
 	w.RequestFocus()
-	w.SetFixedSize(false)
-	w.ShowAndRun()
+	uiLog.Printf("run loop")
+	a.Run()
+	uiLog.Printf("run loop exit")
 }
