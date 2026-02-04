@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 
 	"golang.org/x/sys/windows"
 )
@@ -32,5 +33,8 @@ func launchHeadlessConsole() error {
 	exe = filepath.Clean(exe)
 	cmdline := fmt.Sprintf("\"%s\" --headless --show", exe)
 	cmd := exec.Command("cmd.exe", "/k", cmdline)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		CreationFlags: windows.CREATE_NEW_CONSOLE,
+	}
 	return cmd.Start()
 }
