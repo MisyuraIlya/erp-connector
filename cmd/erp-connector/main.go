@@ -113,15 +113,37 @@ func findConnectordBinary() (string, error) {
 }
 
 func main() {
+	uiLog := newUILogger()
+	defer uiLog.Close()
+	defer func() {
+		if rec := recover(); rec != nil {
+			uiLog.Printf("panic: %v", rec)
+			uiStartupAlert(fmt.Errorf("unexpected error; see UI log for details"))
+		}
+	}()
+
 	if err := uiStartupGuard(); err != nil {
+		uiLog.Printf("startup blocked: %v", err)
 		uiStartupAlert(err)
 		return
+	}
+
+	if exe, err := os.Executable(); err == nil {
+		uiLog.Printf("exe: %s", exe)
+	}
+	if wd, err := os.Getwd(); err == nil {
+		uiLog.Printf("working dir: %s", wd)
 	}
 
 	a := app.New()
 	w := a.NewWindow("Digitrage Erp Connector")
 
 	cfg, err := config.LoadOrDefault()
+	if err == nil {
+		uiLog.Printf("config loaded")
+	} else {
+		uiLog.Printf("config load error: %v", err)
+	}
 	logSvc, logErr := logger.New(cfg)
 	if logErr != nil {
 		logSvc = logger.NewStderr()
