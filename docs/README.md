@@ -22,3 +22,12 @@
 - No public internet exposure (bind to localhost by default).
 - No arbitrary SQL execution.
 - No file access outside configured folders only.
+
+## Headless configuration (no OpenGL)
+
+If the GUI cannot run (for example, Hyper-V "Microsoft Hyper-V Video" with no OpenGL), you can configure the app using CLI mode:
+
+```text
+erp-connector.exe --headless --show
+erp-connector.exe --headless --generate-token --api-listen 127.0.0.1:8080
+```

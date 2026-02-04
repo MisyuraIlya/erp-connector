@@ -123,12 +123,20 @@ func main() {
 		}
 	}()
 
-	log.SetOutput(uiLog.Writer())
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetOutput(newLogWatcher(uiLog.Writer(), handleOpenGLFailure))
 
 	uiLog.Printf("startup begin")
 	if session := os.Getenv("SESSIONNAME"); session != "" {
 		uiLog.Printf("session: %s", session)
+	}
+
+	if handled, err := runHeadless(uiLog); handled {
+		if err != nil {
+			uiLog.Printf("headless error: %v", err)
+			uiStartupAlert(err)
+		}
+		return
 	}
 
 	if err := uiStartupGuard(); err != nil {
