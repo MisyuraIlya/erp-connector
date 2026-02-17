@@ -31,3 +31,5 @@ Use `launchd` LaunchAgent/LaunchDaemon:
 ## UI relationship
 - UI is a configuration tool.
 - Daemon reads config from disk and starts independently.
+- On Windows, the UI `Start server` action installs/updates `erp-connectord` as a Windows Service (`start=auto`) and starts it.
+- On Windows, the UI `Stop server` action stops the `erp-connectord` Windows Service.

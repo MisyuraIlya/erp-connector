@@ -8,12 +8,14 @@ import (
 	"erp-connector/internal/db"
 	"erp-connector/internal/erp/hasavshevet"
 	"erp-connector/internal/logger"
+	"erp-connector/internal/platform/autostart"
 	"erp-connector/internal/secrets"
 	"fmt"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +26,8 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
 )
+
+const connectordWindowsServiceName = "erp-connectord"
 
 func dbPasswordKey(erp config.ERPType) string {
 	return "db_password_" + string(erp)
@@ -421,6 +425,24 @@ func main() {
 			status.SetText("Start failed: " + err.Error())
 			return
 		}
+		if runtime.GOOS == "windows" {
+			created, err := autostart.EnsureWindowsServiceAutoStart(connectordWindowsServiceName, daemonPath)
+			if err != nil {
+				status.SetText("Failed to create/update server service: " + err.Error())
+				return
+			}
+			if err := autostart.StartWindowsService(connectordWindowsServiceName); err != nil {
+				status.SetText("Failed to start server service: " + err.Error())
+				return
+			}
+			if created {
+				status.SetText("Server service created and started.")
+			} else {
+				status.SetText("Server service started.")
+			}
+			return
+		}
+
 		cmd := exec.Command(daemonPath)
 		if err := cmd.Start(); err != nil {
 			status.SetText("Failed to start server: " + err.Error())
@@ -431,6 +453,18 @@ func main() {
 			return
 		}
 		status.SetText("Server started.")
+	})
+
+	stopServerBtn := widget.NewButton("Stop server", func() {
+		if runtime.GOOS != "windows" {
+			status.SetText("Stop server service is supported on Windows only.")
+			return
+		}
+		if err := autostart.StopWindowsService(connectordWindowsServiceName, 20*time.Second); err != nil {
+			status.SetText("Failed to stop server service: " + err.Error())
+			return
+		}
+		status.SetText("Server service stopped.")
 	})
 
 	content := container.NewVBox(
@@ -464,7 +498,7 @@ func main() {
 		addFolderBtn,
 		sendOrderBox,
 
-		container.NewHBox(testBtn, saveBtn, startServerBtn),
+		container.NewHBox(testBtn, saveBtn, startServerBtn, stopServerBtn),
 		status,
 	)
 
