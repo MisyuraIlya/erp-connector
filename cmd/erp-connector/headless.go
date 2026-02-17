@@ -126,7 +126,7 @@ func runHeadless(uiLog *uiLogger) (bool, error) {
 		show        = fs.Bool("show", false, "Print current config summary and exit")
 		generateTok = fs.Bool("generate-token", false, "Generate a new bearer token and print it")
 		testConn    = fs.Bool("test-connection", false, "Test DB connection using current config")
-		initProc    = fs.Bool("init-hasavshevet-proc", false, "Initialize GPRICE_Bulk for Hasavshevet")
+		initProc    = fs.Bool("init-hasavshevet-proc", false, "Initialize Hasavshevet procedures (GPRICE_Bulk, GetOnHandStockForSkus)")
 		clearImages = fs.Bool("clear-image-folders", false, "Clear configured image folders")
 	)
 
@@ -305,6 +305,16 @@ func runHeadless(uiLog *uiLogger) (bool, error) {
 				fmt.Fprintln(os.Stdout, "GPRICE_Bulk created.")
 			} else {
 				fmt.Fprintln(os.Stdout, "GPRICE_Bulk already exists.")
+			}
+
+			created, err = hasavshevet.EnsureOnHandStockForSkusProcedure(ctx, dbConn)
+			if err != nil {
+				return true, err
+			}
+			if created {
+				fmt.Fprintln(os.Stdout, "GetOnHandStockForSkus created.")
+			} else {
+				fmt.Fprintln(os.Stdout, "GetOnHandStockForSkus already exists.")
 			}
 		}
 	}

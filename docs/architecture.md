@@ -9,7 +9,7 @@ Responsibilities:
 - Configure REST API port.
 - Configure N image folders.
 - Hasavshevet only: configure sendOrder output folder.
-- Hasavshevet only: initialize required DB procedure (GPRICE_Bulk) on save if missing.
+- Hasavshevet only: initialize required DB procedures (`GPRICE_Bulk`, `GetOnHandStockForSkus`) on save if missing.
 - Write config to disk.
 
 ### 2) Daemon: `cmd/erp-connectord`

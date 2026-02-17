@@ -38,7 +38,7 @@ func resolveDBPassword(erp config.ERPType, entered string, required bool) (strin
 	}
 	b, err := secrets.Get(dbPasswordKey(erp))
 	if err != nil {
-		return "", fmt.Errorf("db password is required to initialize GPRICE_Bulk: %w", err)
+		return "", fmt.Errorf("db password is required to initialize Hasavshevet procedures: %w", err)
 	}
 	return string(b), nil
 }
@@ -362,7 +362,7 @@ func main() {
 
 			dbConn, err := db.Open(cfg, password, db.DefaultOptions())
 			if err != nil {
-				return fmt.Errorf("failed to connect for GPRICE_Bulk setup: %w", err)
+				return fmt.Errorf("failed to connect for Hasavshevet procedure setup: %w", err)
 			}
 			defer dbConn.Close()
 
@@ -375,6 +375,17 @@ func main() {
 				logSvc.Success("GPRICE_Bulk created")
 			} else {
 				logSvc.Info("GPRICE_Bulk already exists")
+			}
+
+			created, err = hasavshevet.EnsureOnHandStockForSkusProcedure(ctx, dbConn)
+			if err != nil {
+				logSvc.Error("failed to initialize GetOnHandStockForSkus", err)
+				return fmt.Errorf("failed to initialize GetOnHandStockForSkus: %w", err)
+			}
+			if created {
+				logSvc.Success("GetOnHandStockForSkus created")
+			} else {
+				logSvc.Info("GetOnHandStockForSkus already exists")
 			}
 		}
 

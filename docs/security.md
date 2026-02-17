@@ -21,7 +21,7 @@ Token storage:
   - Max response row limit
 - Use least-privilege DB user:
   - Read-only permissions for SQL endpoint and handlers.
-  - Hasavshevet setup requires CREATE/ALTER permission for the GPRICE_Bulk procedure (or pre-create it once, then revoke).
+  - Hasavshevet setup requires CREATE/ALTER permission for `GPRICE_Bulk` and `GetOnHandStockForSkus` procedures (or pre-create them once, then revoke).
 
 ## File endpoint hardening
 - Only serve files under configured folders.

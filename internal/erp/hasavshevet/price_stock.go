@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -36,13 +35,19 @@ type gpriceRow struct {
 	DocumentID   sql.NullInt64
 }
 
+type onHandStockRow struct {
+	SKU             string
+	WarehouseStock  sql.NullFloat64
+	OpenOrdersStock sql.NullFloat64
+	TotalStock      sql.NullFloat64
+}
+
 func FetchPriceAndStock(ctx context.Context, dbConn *sql.DB, cfg config.Config, req erp.PriceStockRequest) (erp.PriceStockResult, error) {
 	if dbConn == nil {
 		return erp.PriceStockResult{}, errors.New("db connection is required")
 	}
 
-	dbNameRaw := strings.TrimSpace(cfg.DB.Database)
-	if dbNameRaw == "" {
+	if strings.TrimSpace(cfg.DB.Database) == "" {
 		return erp.PriceStockResult{}, errors.New("db.database is required")
 	}
 	skus := uniqueStrings(req.SKUList)
@@ -62,7 +67,7 @@ func FetchPriceAndStock(ctx context.Context, dbConn *sql.DB, cfg config.Config, 
 		return erp.PriceStockResult{}, err
 	}
 
-	stockByItem, err := fetchStockData(ctx, dbConn, escapeIdentifier(dbNameRaw), skus, req.Warehouses)
+	stockByItem, err := fetchStockData(ctx, dbConn, skus, req.Warehouses)
 	if err != nil {
 		return erp.PriceStockResult{}, err
 	}
@@ -211,62 +216,82 @@ func parseDocumentID(values []string) int {
 	return 1
 }
 
-func fetchStockData(ctx context.Context, dbConn *sql.DB, dbName string, skus, warehouses []string) (map[string]map[string]float64, error) {
+func fetchStockData(ctx context.Context, dbConn *sql.DB, skus, warehouses []string) (map[string]map[string]float64, error) {
 	if len(skus) == 0 {
 		return map[string]map[string]float64{}, nil
 	}
+	warehouses = uniqueStrings(warehouses)
 	if len(warehouses) == 0 {
 		warehouses = []string{"10"}
 	}
 
-	skuPlaceholders, skuArgs := buildStringInParams("sku", skus)
-	whPlaceholders, whArgs := buildStringInParams("wh", warehouses)
-	args := append(skuArgs, whArgs...)
+	skusJSONBytes, err := json.Marshal(skus)
+	if err != nil {
+		return nil, err
+	}
+	skusJSON := string(skusJSONBytes)
 
-	query := fmt.Sprintf(`
-		SELECT ITEMKEY, WAREHOUSE, SUM(ITEMWARHBAL) AS ITEMWARHBAL
-		FROM %s.[dbo].[vBalItemWarehouse]
-		WHERE ITEMKEY IN (%s)
-		  AND WAREHOUSE IN (%s)
-		GROUP BY ITEMKEY, WAREHOUSE
-	`, dbName, strings.Join(skuPlaceholders, ", "), strings.Join(whPlaceholders, ", "))
+	out := make(map[string]map[string]float64)
+	for _, warehouse := range warehouses {
+		warehouse = strings.TrimSpace(warehouse)
+		if warehouse == "" {
+			continue
+		}
 
-	rows, err := dbConn.QueryContext(ctx, query, args...)
+		totalsBySKU, err := fetchOnHandStockForWarehouse(ctx, dbConn, warehouse, skusJSON)
+		if err != nil {
+			return nil, err
+		}
+
+		for sku, total := range totalsBySKU {
+			if out[sku] == nil {
+				out[sku] = make(map[string]float64)
+			}
+			out[sku][warehouse] = total
+		}
+	}
+
+	return out, nil
+}
+
+func fetchOnHandStockForWarehouse(ctx context.Context, dbConn *sql.DB, warehouse, skusJSON string) (map[string]float64, error) {
+	const query = `
+		EXEC dbo.GetOnHandStockForSkus
+			@Warehouse = @Warehouse,
+			@SkusJson = @SkusJson;
+	`
+
+	rows, err := dbConn.QueryContext(ctx, query,
+		sql.Named("Warehouse", warehouse),
+		sql.Named("SkusJson", skusJSON),
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	out := make(map[string]map[string]float64)
+	out := make(map[string]float64)
 	for rows.Next() {
-		var (
-			itemKey   string
-			warehouse string
-			bal       sql.NullFloat64
-		)
-		if err := rows.Scan(&itemKey, &warehouse, &bal); err != nil {
+		var row onHandStockRow
+		if err := rows.Scan(&row.SKU, &row.WarehouseStock, &row.OpenOrdersStock, &row.TotalStock); err != nil {
 			return nil, err
 		}
-		if out[itemKey] == nil {
-			out[itemKey] = make(map[string]float64)
+
+		sku := strings.TrimSpace(row.SKU)
+		if sku == "" {
+			continue
 		}
-		out[itemKey][warehouse] = bal.Float64
+
+		if row.TotalStock.Valid {
+			out[sku] = row.TotalStock.Float64
+			continue
+		}
+		out[sku] = 0
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
 	return out, nil
-}
-
-func buildStringInParams(prefix string, values []string) ([]string, []any) {
-	placeholders := make([]string, 0, len(values))
-	args := make([]any, 0, len(values))
-	for i, v := range values {
-		name := fmt.Sprintf("%s_%d", prefix, i)
-		placeholders = append(placeholders, "@"+name)
-		args = append(args, sql.Named(name, v))
-	}
-	return placeholders, args
 }
 
 func uniqueStrings(values []string) []string {
@@ -284,9 +309,4 @@ func uniqueStrings(values []string) []string {
 		out = append(out, v)
 	}
 	return out
-}
-
-func escapeIdentifier(name string) string {
-	name = strings.ReplaceAll(name, "]", "]]")
-	return "[" + name + "]"
 }
