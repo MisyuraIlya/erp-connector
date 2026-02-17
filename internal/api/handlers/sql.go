@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +51,7 @@ func NewSQLHandler(dbConn *sql.DB) http.HandlerFunc {
 
 		var req dto.SQLRequest
 		dec := json.NewDecoder(r.Body)
+		dec.UseNumber()
 		if err := dec.Decode(&req); err != nil {
 			utils.WriteError(w, http.StatusBadRequest, "Invalid JSON body", "INVALID_JSON", nil)
 			return
@@ -72,7 +74,8 @@ func NewSQLHandler(dbConn *sql.DB) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), sqlTimeout)
 		defer cancel()
 
-		args := buildNamedArgs(req.Params)
+		intParamHints := detectIntegerParams(req.Query)
+		args := buildNamedArgs(req.Params, intParamHints)
 
 		rows, err := dbConn.QueryContext(ctx, req.Query, args...)
 		if err != nil {
@@ -126,7 +129,7 @@ func ensureEOF(dec *json.Decoder) error {
 	return errors.New("extra data")
 }
 
-func buildNamedArgs(params map[string]any) []any {
+func buildNamedArgs(params map[string]any, intParamHints map[string]struct{}) []any {
 	if len(params) == 0 {
 		return nil
 	}
@@ -139,20 +142,87 @@ func buildNamedArgs(params map[string]any) []any {
 	args := make([]any, 0, len(keys))
 	for _, key := range keys {
 		name := strings.TrimPrefix(key, "@")
-		args = append(args, sql.Named(name, normalizeParamValue(params[key])))
+		args = append(args, sql.Named(name, normalizeParamValue(name, params[key], intParamHints)))
 	}
 	return args
 }
 
-func normalizeParamValue(v any) any {
+func normalizeParamValue(name string, v any, intParamHints map[string]struct{}) any {
 	switch t := v.(type) {
 	case float64:
 		if math.Trunc(t) == t {
 			return int64(t)
 		}
 		return t
+	case json.Number:
+		if i, err := t.Int64(); err == nil {
+			return i
+		}
+		if f, err := t.Float64(); err == nil {
+			if math.Trunc(f) == f {
+				return int64(f)
+			}
+			return f
+		}
+		return t.String()
+	case string:
+		if shouldCoerceToInt(name, intParamHints) {
+			if i, ok := parseInt64String(t); ok {
+				return i
+			}
+		}
+		return t
 	default:
 		return v
+	}
+}
+
+func shouldCoerceToInt(name string, intParamHints map[string]struct{}) bool {
+	if len(intParamHints) == 0 {
+		return false
+	}
+	_, ok := intParamHints[strings.ToLower(strings.TrimPrefix(name, "@"))]
+	return ok
+}
+
+func parseInt64String(raw string) (int64, bool) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return 0, false
+	}
+	for i, ch := range s {
+		if i == 0 && (ch == '+' || ch == '-') {
+			if len(s) == 1 {
+				return 0, false
+			}
+			continue
+		}
+		if ch < '0' || ch > '9' {
+			return 0, false
+		}
+	}
+	out, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return out, true
+}
+
+func detectIntegerParams(query string) map[string]struct{} {
+	hints := make(map[string]struct{})
+	addIntegerParamHints(hints, query, offsetParamRe)
+	addIntegerParamHints(hints, query, fetchNextParamRe)
+	addIntegerParamHints(hints, query, topParamRe)
+	return hints
+}
+
+func addIntegerParamHints(hints map[string]struct{}, query string, re *regexp.Regexp) {
+	matches := re.FindAllStringSubmatch(query, -1)
+	for _, m := range matches {
+		if len(m) < 2 {
+			continue
+		}
+		hints[strings.ToLower(strings.TrimPrefix(m[1], "@"))] = struct{}{}
 	}
 }
 
@@ -208,6 +278,12 @@ var disallowedKeywordRegex = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)\bgrant\b`),
 	regexp.MustCompile(`(?i)\brevoke\b`),
 }
+
+var (
+	offsetParamRe    = regexp.MustCompile(`(?i)\boffset\s+@([a-z_][a-z0-9_]*)\s+rows\b`)
+	fetchNextParamRe = regexp.MustCompile(`(?i)\bfetch\s+next\s+@([a-z_][a-z0-9_]*)\s+rows\s+only\b`)
+	topParamRe       = regexp.MustCompile(`(?i)\btop\s*\(\s*@([a-z_][a-z0-9_]*)\s*\)`)
+)
 
 func stripStringLiterals(s string) string {
 	var b strings.Builder
