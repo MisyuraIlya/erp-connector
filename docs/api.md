@@ -94,6 +94,10 @@ Request:
 }
 ```
 
+Notes:
+- For Hasavshevet, `priceList` is optional and ignored.
+- For Hasavshevet, pricing uses `DocumentID = 1` internally.
+
 Response (example):
 ```json
 {

@@ -47,10 +47,12 @@ func NewPriceAndStockHandler(cfg config.Config, dbConn *sql.DB) http.HandlerFunc
 
 		erpReq := erp.PriceStockRequest{
 			SKUList:    req.SKUList,
-			PriceList:  req.PriceList,
 			Warehouses: req.Warehouses,
 			UserExtID:  req.UserExtID,
 			Date:       req.Date,
+		}
+		if cfg.ERP != config.ERPHasavshevet {
+			erpReq.PriceList = req.PriceList
 		}
 
 		start := time.Now()

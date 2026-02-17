@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +41,8 @@ type onHandStockRow struct {
 	TotalStock      sql.NullFloat64
 }
 
+const hasavshevetDefaultDocumentID = 1
+
 func FetchPriceAndStock(ctx context.Context, dbConn *sql.DB, cfg config.Config, req erp.PriceStockRequest) (erp.PriceStockResult, error) {
 	if dbConn == nil {
 		return erp.PriceStockResult{}, errors.New("db connection is required")
@@ -55,7 +56,7 @@ func FetchPriceAndStock(ctx context.Context, dbConn *sql.DB, cfg config.Config, 
 		return erp.PriceStockResult{Items: []erp.PriceStockItem{}}, nil
 	}
 
-	documentID := parseDocumentID(req.PriceList)
+	documentID := hasavshevetDefaultDocumentID
 	var datF any
 	if strings.TrimSpace(req.Date) != "" {
 		datF = strings.TrimSpace(req.Date)
@@ -201,19 +202,6 @@ func normalizeGPriceRow(row gpriceRow) gpriceRecord {
 		rec.DocumentID = &val
 	}
 	return rec
-}
-
-func parseDocumentID(values []string) int {
-	for _, val := range values {
-		val = strings.TrimSpace(val)
-		if val == "" {
-			continue
-		}
-		if v, err := strconv.Atoi(val); err == nil && v > 0 {
-			return v
-		}
-	}
-	return 1
 }
 
 func fetchStockData(ctx context.Context, dbConn *sql.DB, skus, warehouses []string) (map[string]map[string]float64, error) {
