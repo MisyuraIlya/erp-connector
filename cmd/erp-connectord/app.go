@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 
 	"erp-connector/internal/api"
 	"erp-connector/internal/config"
 	"erp-connector/internal/db"
+	"erp-connector/internal/erp/hasavshevet"
 	"erp-connector/internal/logger"
 	"erp-connector/internal/platform/autostart"
 	"erp-connector/internal/secrets"
@@ -18,12 +20,14 @@ import (
 const windowsServiceName = "erp-connectord"
 
 type serverApp struct {
-	cfg       config.Config
-	logSvc    logger.LoggerService
-	dbConn    *sql.DB
-	srv       *http.Server
-	errCh     chan error
-	dbPassStr string
+	cfg          config.Config
+	logSvc       logger.LoggerService
+	dbConn       *sql.DB
+	srv          *http.Server
+	errCh        chan error
+	dbPassStr    string
+	orderQueue   *hasavshevet.OrderQueue
+	queueCancel  context.CancelFunc
 }
 
 func (a *serverApp) Start() error {
@@ -63,10 +67,22 @@ func (a *serverApp) Start() error {
 	}
 	a.dbConn = dbConn
 
+	// Build the send-order queue for Hasavshevet.
+	// Order number file lives next to IMOVEIN files for self-contained directory.
+	numStorePath := filepath.Join(cfg.SendOrderDir, "lastOrderNumber.json")
+	numStore := hasavshevet.NewOrderNumberStore(numStorePath)
+	sender := hasavshevet.NewSender(dbConn, cfg, numStore, logSvc)
+	queue := hasavshevet.NewOrderQueue(sender, logSvc)
+	queueCtx, queueCancel := context.WithCancel(context.Background())
+	queue.Start(queueCtx)
+	a.orderQueue = queue
+	a.queueCancel = queueCancel
+
 	srv, err := api.NewServer(cfg, api.ServerDeps{
-		DBPassword: a.dbPassStr,
-		DB:         dbConn,
-		Logger:     logSvc,
+		DBPassword:     a.dbPassStr,
+		DB:             dbConn,
+		Logger:         logSvc,
+		SendOrderQueue: queue,
 	})
 	if err != nil {
 		logSvc.Error("config validation error", err)
@@ -87,6 +103,9 @@ func (a *serverApp) Start() error {
 func (a *serverApp) Stop(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if a.queueCancel != nil {
+		a.queueCancel()
 	}
 	if a.srv != nil {
 		_ = a.srv.Shutdown(ctx)

@@ -1,15 +1,39 @@
 package dto
 
-// TODO
+// SendOrderRequest matches the legacy Node send-order payload exactly.
+// Numeric fields that are required-but-zero (discount, total, quantity, prices)
+// are represented as pointers so null vs zero can be distinguished.
 type SendOrderRequest struct {
+	DBName       string              `json:"dbName"`
+	DocumentType string              `json:"documentType"`
+	UserExtID    string              `json:"userExtId"`
+	DueDate      string              `json:"dueDate"`
+	CreatedDate  string              `json:"createdDate"`
+	Comment      string              `json:"comment"`
+	Discount     *float64            `json:"discount"`
+	HistoryID    string              `json:"historyId"`
+	Total        *float64            `json:"total"`
+	Currency     string              `json:"currency"`
+	Details      []SendOrderLineItem `json:"details"`
+}
+
+type SendOrderLineItem struct {
+	Title         string   `json:"title"`
+	SKU           string   `json:"sku"`
+	Quantity      *float64 `json:"quantity"`
+	OriginalPrice *float64 `json:"originalPrice"`
+	SinglePrice   *float64 `json:"singlePrice"`
+	TotalPrice    *float64 `json:"totalPrice"`
+	Discount      *float64 `json:"discount"`
 }
 
 type SendOrderMeta struct {
 	DurationMs int64 `json:"durationMs"`
 }
 
-type SendOrderResponse struct {
-	Status       string        `json:"status"`
-	WrittenFiles []string      `json:"writtenFiles,omitempty"`
-	Meta         SendOrderMeta `json:"meta,omitempty"`
+// SendOrderAccepted is returned immediately with 202 when the order is enqueued.
+type SendOrderAccepted struct {
+	Status string        `json:"status"`
+	JobID  string        `json:"jobId"`
+	Meta   SendOrderMeta `json:"meta"`
 }

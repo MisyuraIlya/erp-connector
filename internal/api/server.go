@@ -13,13 +13,15 @@ import (
 	"erp-connector/internal/api/middleware"
 	"erp-connector/internal/api/utils"
 	"erp-connector/internal/config"
+	"erp-connector/internal/erp/hasavshevet"
 	"erp-connector/internal/logger"
 )
 
 type ServerDeps struct {
-	DBPassword string
-	DB         *sql.DB
-	Logger     logger.LoggerService
+	DBPassword     string
+	DB             *sql.DB
+	Logger         logger.LoggerService
+	SendOrderQueue *hasavshevet.OrderQueue
 }
 
 func NewServer(cfg config.Config, deps ServerDeps) (*http.Server, error) {
@@ -49,12 +51,13 @@ func NewServer(cfg config.Config, deps ServerDeps) (*http.Server, error) {
 	priceStockHandler := handlers.NewPriceAndStockHandler(cfg, deps.DB)
 	folderFilesHandler := handlers.NewListFolderFilesHandler(cfg.ImageFolders)
 	fileHandler := handlers.NewFileHandler(cfg.ImageFolders)
+	sendOrderHandler := handlers.NewSendOrderHandler(deps.SendOrderQueue)
 
 	mux.Handle("GET /api/health", wrap(healthHandler))
 	mux.Handle("POST /api/sql", wrap(sqlHandler))
 	mux.Handle("GET /api/folders/list", wrap(folderFilesHandler))
 	mux.Handle("POST /api/file", wrap(fileHandler))
-	mux.Handle("POST /api/sendOrder", wrap(http.HandlerFunc(handlers.SendOrder)))
+	mux.Handle("POST /api/sendOrder", wrap(sendOrderHandler))
 	mux.Handle("POST /api/priceAndStockHandler", wrap(priceStockHandler))
 	mux.Handle("/api/", wrap(http.HandlerFunc(NotFound)))
 
@@ -90,6 +93,5 @@ func validateListenAddr(addr string) error {
 }
 
 func NotFound(w http.ResponseWriter, r *http.Request) {
-	// TODO implement
 	utils.WriteError(w, http.StatusNotFound, "Not found", "NOT_FOUND", nil)
 }

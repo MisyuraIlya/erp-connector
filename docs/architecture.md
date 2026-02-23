@@ -43,7 +43,29 @@ Responsibilities:
    - SQL: validate SELECT-only → bind params → query → return rows
    - Files: validate folder allow-list → list/stream
    - ERP handlers: run ERP-specific DB queries and mapping
-   - sendOrder: run Hasavshevet workflow → write file(s) to configured folder
+   - sendOrder: validate → enqueue → return 202; worker writes IMOVEIN files + executes has.exe
+
+## sendOrder queue model
+
+`POST /api/sendOrder` enqueues the job and returns immediately.
+A single background goroutine (`OrderQueue`) processes jobs serially:
+
+```
+HTTP handler → OrderQueue (chan, capacity 64) → single worker goroutine
+                                                      │
+                                               Sender.ProcessOrder
+                                                 ├─ OrderNumberStore (mutex + JSON)
+                                                 ├─ DB: Accounts query
+                                                 ├─ DB: Rates query
+                                                 ├─ generateDOC / generatePRM (Windows-1255)
+                                                 ├─ Write IMOVEIN.doc/.prm  (SendOrderDir)
+                                                 ├─ Write history copy       (SendOrderDir/history/<N>/)
+                                                 └─ exec has.exe             (Windows only)
+```
+
+The single-worker model guarantees that `IMOVEIN.doc/.prm` are never written
+or imported concurrently, preventing file collisions without explicit locking
+on the file path.
 
 ## Key constraints
 

@@ -26,7 +26,14 @@ type Config struct {
 	Debug        bool     `yaml:"debug"`
 	BearerToken  string   `yaml:"bearerToken"`
 	ImageFolders []string `yaml:"imageFolders"`
-	SendOrderDir string   `yaml:"sendOrderDir"`
+	// SendOrderDir is the working directory for Hasavshevet import files.
+	// IMOVEIN.doc/.prm are written here; history/<orderNum>/ subdirs are created beneath it.
+	SendOrderDir string `yaml:"sendOrderDir"`
+	// HasExePath is the absolute path to has.exe (Hasavshevet importer, Windows only).
+	// Leave empty to skip automatic import execution — files will still be written.
+	HasExePath string `yaml:"hasExePath"`
+	// HasParamFile is the parameter file passed to has.exe (e.g. digi_perm.bat).
+	HasParamFile string   `yaml:"hasParamFile"`
 	DB           DBConfig `yaml:"db"`
 }
 
@@ -64,6 +71,8 @@ func Default() Config {
 		BearerToken:  "",
 		ImageFolders: []string{},
 		SendOrderDir: "",
+		HasExePath:   "",
+		HasParamFile: "",
 		DB: DBConfig{
 			Driver:   "mssql",
 			Host:     "localhost",

@@ -72,12 +72,52 @@ Response:
 ## Hasavshevet: sendOrder
 - `POST /api/sendOrder`
 
-Request: (app-defined order schema)
-
-Response:
+Request:
 ```json
-{ "status":"ok", "writtenFiles":["..."], "meta":{"durationMs":45} }
+{
+  "dbName": "MYDB",
+  "documentType": "ORDER",
+  "userExtId": "CUST001",
+  "dueDate": "2026-03-01",
+  "createdDate": "2026-02-23",
+  "comment": "optional free text",
+  "discount": 0.0,
+  "historyId": "HID-001",
+  "total": 150.0,
+  "currency": "ש\"ח",
+  "details": [
+    {
+      "title": "Item name",
+      "sku": "SKU-001",
+      "quantity": 2.0,
+      "originalPrice": 75.0,
+      "singlePrice": 75.0,
+      "totalPrice": 150.0,
+      "discount": 0.0
+    }
+  ]
+}
 ```
+
+Notes:
+- `documentType`: `ORDER` | `QUOATE` | `RETURN`
+- `discount` and `total` are required even when `0`.
+- `quantity` must not be zero (Hasavshevet line23 mandatory field spec).
+- Processing is **asynchronous**: API returns `202` immediately; IMOVEIN files are
+  written and `has.exe` is invoked in a single background worker.
+
+Response `202 Accepted`:
+```json
+{ "status": "queued", "jobId": "a1b2c3d4e5f6g7h8", "meta": { "durationMs": 2 } }
+```
+
+Errors:
+```json
+{ "error": "Missing required fields: documentType, historyId", "code": "VALIDATION_ERROR" }
+{ "error": "Order queue full; try again later", "code": "QUEUE_FULL" }
+```
+
+See `docs/hasavshevet-send-order.md` for full runbook, file format details, and config.
 
 ## priceAndStockHandler
 
