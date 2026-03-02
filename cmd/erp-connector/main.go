@@ -311,9 +311,30 @@ func main() {
 		}, w)
 	})
 	sendOrderRow := container.NewBorder(nil, nil, nil, sendOrderBrowseBtn, sendOrderEntry)
+
+	hasBatEntry := widget.NewEntry()
+	hasBatEntry.SetPlaceHolder(`e.g. C:\Hash7\digi.bat`)
+	hasBatEntry.SetText(cfg.HasBatFile)
+	hasBatBrowseBtn := widget.NewButton("Browse", func() {
+		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+			if err != nil {
+				status.SetText("File selection error: " + err.Error())
+				return
+			}
+			if reader == nil {
+				return
+			}
+			defer reader.Close()
+			hasBatEntry.SetText(reader.URI().Path())
+		}, w)
+	})
+	hasBatRow := container.NewBorder(nil, nil, nil, hasBatBrowseBtn, hasBatEntry)
+
 	sendOrderBox := container.NewVBox(
 		widget.NewLabel("Send order folder"),
 		sendOrderRow,
+		widget.NewLabel("Hasavshevet BAT file (digi.bat)"),
+		hasBatRow,
 	)
 
 	updateSendOrderVisibility := func(erp config.ERPType) {
@@ -393,8 +414,10 @@ func main() {
 
 		if cfg.ERP == config.ERPHasavshevet {
 			cfg.SendOrderDir = strings.TrimSpace(sendOrderEntry.Text)
+			cfg.HasBatFile = strings.TrimSpace(hasBatEntry.Text)
 		} else {
 			cfg.SendOrderDir = ""
+			cfg.HasBatFile = ""
 		}
 
 		password, err := resolveDBPassword(cfg.ERP, passEntry.Text, cfg.ERP == config.ERPHasavshevet)
