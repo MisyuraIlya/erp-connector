@@ -215,7 +215,7 @@ func buildIMOVEIN(orderNum int64, account accountInfo, req OrderRequest, rate fl
 		Address:      sanitizeField(account.Address),
 		City:         sanitizeField(account.City),
 		Phone:        sanitizeField(account.Phone),
-		Asmahta2:     req.HistoryID,
+		Asmahta2:     fmt.Sprintf("%d", orderNum),
 		ShortDate:    shortDate,
 		Agent:        account.Agent,
 		WareHouse:    wareHouse,
