@@ -25,6 +25,7 @@ type Config struct {
 	APIListen    string   `yaml:"apiListen"`
 	Debug        bool     `yaml:"debug"`
 	BearerToken  string   `yaml:"bearerToken"`
+	ERPUser      string   `yaml:"erpUser"`
 	ImageFolders []string `yaml:"imageFolders"`
 	// SendOrderDir is the working directory for Hasavshevet import files.
 	// IMOVEIN.doc/.prm are written here; history/<orderNum>/ subdirs are created beneath it.

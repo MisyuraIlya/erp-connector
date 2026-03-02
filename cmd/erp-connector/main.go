@@ -218,6 +218,47 @@ func main() {
 	passEntry := widget.NewPasswordEntry()
 	passEntry.SetPlaceHolder("Leave blank to keep existing")
 
+	erpUserEntry := widget.NewEntry()
+	erpUserEntry.SetText(cfg.ERPUser)
+	testUserBtn := widget.NewButton("Test user", func() {
+		loginName := strings.TrimSpace(erpUserEntry.Text)
+		if loginName == "" {
+			status.SetText("ERP user is required")
+			return
+		}
+		tmp := cfg
+		tmp.DB.Driver = config.DBDriver(driverSelect.Selected)
+		tmp.DB.Host = hostEntry.Text
+		p, err := strconv.Atoi(portEntry.Text)
+		if err != nil || p <= 0 || p > 65535 {
+			status.SetText("Invalid DB Port")
+			return
+		}
+		tmp.DB.Port = p
+		tmp.DB.User = userEntry.Text
+		tmp.DB.Database = dbEntry.Text
+
+		status.SetText("Testing user...")
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+
+		dbConn, err := db.Open(tmp, passEntry.Text, db.DefaultOptions())
+		if err != nil {
+			status.SetText("Connection failed: " + err.Error())
+			return
+		}
+		defer dbConn.Close()
+
+		var found string
+		err = dbConn.QueryRowContext(ctx, "SELECT LoginName FROM USERS WHERE LoginName = @p1", loginName).Scan(&found)
+		if err != nil {
+			status.SetText("User not found: " + loginName)
+			return
+		}
+		status.SetText("User OK: " + found)
+	})
+	erpUserRow := container.NewBorder(nil, nil, nil, testUserBtn, erpUserEntry)
+
 	erpSelect := widget.NewSelect(config.ErpOption(), func(string) {})
 	erpSelect.SetSelected(string(cfg.ERP))
 
@@ -334,6 +375,7 @@ func main() {
 		cfg.DB.Port = p
 		cfg.DB.User = userEntry.Text
 		cfg.DB.Database = dbEntry.Text
+		cfg.ERPUser = strings.TrimSpace(erpUserEntry.Text)
 
 		if cfg.ERP == config.ERPHasavshevet && strings.TrimSpace(cfg.DB.Database) == "" {
 			return fmt.Errorf("DB database is required for Hasavshevet")
@@ -491,6 +533,8 @@ func main() {
 		dbEntry,
 		widget.NewLabel("Password"),
 		passEntry,
+		widget.NewLabel("ERP User"),
+		erpUserRow,
 
 		widget.NewSeparator(),
 		widget.NewLabel("Image folders"),
