@@ -16,8 +16,8 @@ import (
 
 // OrderRequest is the internal representation of a send-order request,
 // translated from the API DTO before enqueueing.
+// DBName is not part of the request; the Sender resolves it from config.
 type OrderRequest struct {
-	DBName       string
 	DocumentType string
 	UserExtID    string
 	DueDate      string
@@ -83,6 +83,12 @@ func (s *Sender) ProcessOrder(ctx context.Context, req OrderRequest) (*OrderResu
 		return nil, errors.New("sendOrderDir is not configured")
 	}
 
+	// DB name always comes from the connector config.
+	dbName := strings.TrimSpace(s.cfg.DB.Database)
+	if dbName == "" {
+		return nil, errors.New("database is not configured (set db.database in config)")
+	}
+
 	// 1. Pre-flight validation (business rules + Hasavshevet mandatory field spec)
 	if err := validateOrderRequest(req); err != nil {
 		return nil, err
@@ -94,17 +100,17 @@ func (s *Sender) ProcessOrder(ctx context.Context, req OrderRequest) (*OrderResu
 		return nil, fmt.Errorf("get order number: %w", err)
 	}
 
-	s.log.Info(fmt.Sprintf("processing order orderNumber=%d historyId=%s userExtId=%s",
-		orderNum, req.HistoryID, req.UserExtID))
+	s.log.Info(fmt.Sprintf("processing order orderNumber=%d historyId=%s userExtId=%s dbName=%s",
+		orderNum, req.HistoryID, req.UserExtID, dbName))
 
 	// 3. Account lookup
-	account, err := s.queryAccount(ctx, req.DBName, req.UserExtID)
+	account, err := s.queryAccount(ctx, dbName, req.UserExtID)
 	if err != nil {
 		return nil, fmt.Errorf("query account %q: %w", req.UserExtID, err)
 	}
 
 	// 4. Currency rate (non-fatal; default 1.0 matches legacy behaviour)
-	rate, err := s.queryRate(ctx, req.DBName, req.Currency)
+	rate, err := s.queryRate(ctx, dbName, req.Currency)
 	if err != nil {
 		s.log.Warn(fmt.Sprintf("rate lookup failed currency=%s: %v; using 1.0", req.Currency, err))
 		rate = 1.0

@@ -129,7 +129,6 @@ func NewSendOrderHandler(queue *hasavshevet.OrderQueue) http.HandlerFunc {
 		}
 
 		orderReq := hasavshevet.OrderRequest{
-			DBName:       req.DBName,
 			DocumentType: req.DocumentType,
 			UserExtID:    req.UserExtID,
 			DueDate:      req.DueDate,

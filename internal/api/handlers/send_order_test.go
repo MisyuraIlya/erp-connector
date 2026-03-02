@@ -149,7 +149,6 @@ func TestSendOrderHandler_AllDocumentTypes(t *testing.T) {
 // validOrderBody returns a minimal valid order request body.
 func validOrderBody() map[string]any {
 	return map[string]any{
-		"dbName":       "TESTDB",
 		"documentType": "ORDER",
 		"userExtId":    "CUST001",
 		"dueDate":      "2026-03-01",

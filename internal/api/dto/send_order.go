@@ -1,10 +1,10 @@
 package dto
 
-// SendOrderRequest matches the legacy Node send-order payload exactly.
+// SendOrderRequest is the JSON body for POST /api/sendOrder.
 // Numeric fields that are required-but-zero (discount, total, quantity, prices)
 // are represented as pointers so null vs zero can be distinguished.
+// dbName is not required — the connector uses the database from its config.
 type SendOrderRequest struct {
-	DBName       string              `json:"dbName"`
 	DocumentType string              `json:"documentType"`
 	UserExtID    string              `json:"userExtId"`
 	DueDate      string              `json:"dueDate"`
