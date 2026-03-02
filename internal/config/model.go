@@ -34,7 +34,13 @@ type Config struct {
 	// Leave empty to skip automatic import execution — files will still be written.
 	HasExePath string `yaml:"hasExePath"`
 	// HasParamFile is the parameter file passed to has.exe (e.g. digi_perm.bat).
-	HasParamFile string   `yaml:"hasParamFile"`
+	HasParamFile string `yaml:"hasParamFile"`
+	// HasBatFile is the absolute path to the Masofon-generated BAT launcher
+	// (e.g. C:\Hash7\digi.bat). When set, it is invoked via cmd.exe /C after
+	// each order's IMOVEIN files are written. Takes precedence over HasExePath.
+	// The BAT is executed from its own directory so relative paths inside it
+	// (e.g. -p"digi.bat") resolve correctly.
+	HasBatFile string `yaml:"hasBatFile"`
 	DB           DBConfig `yaml:"db"`
 }
 
@@ -74,6 +80,7 @@ func Default() Config {
 		SendOrderDir: "",
 		HasExePath:   "",
 		HasParamFile: "",
+		HasBatFile:   "",
 		DB: DBConfig{
 			Driver:   "mssql",
 			Host:     "localhost",

@@ -146,8 +146,20 @@ func (s *Sender) ProcessOrder(ctx context.Context, req OrderRequest) (*OrderResu
 		writtenFiles = append(writtenFiles, f.path)
 	}
 
-	// 8. Execute Hasavshevet importer (Windows only; no-op on other platforms)
-	if strings.TrimSpace(s.cfg.HasExePath) != "" {
+	// 8. Execute Hasavshevet importer (Windows only; no-op on other platforms).
+	// HasBatFile (Masofon-generated BAT launcher) takes precedence over HasExePath.
+	// The single-worker queue guarantees the previous import is finished before
+	// the next order's files are written and the importer is invoked again.
+	switch {
+	case strings.TrimSpace(s.cfg.HasBatFile) != "":
+		start := time.Now()
+		exitCode, output, execErr := runBatFile(ctx, s.cfg.HasBatFile)
+		s.log.Info(fmt.Sprintf("digi.bat exit=%d durationMs=%d output=%q orderNumber=%d",
+			exitCode, time.Since(start).Milliseconds(), output, orderNum))
+		if execErr != nil || exitCode != 0 {
+			s.log.Error(fmt.Sprintf("digi.bat failed orderNumber=%d exit=%d", orderNum, exitCode), execErr)
+		}
+	case strings.TrimSpace(s.cfg.HasExePath) != "":
 		start := time.Now()
 		exitCode, output, execErr := runImporter(ctx, s.cfg.HasExePath, s.cfg.HasParamFile, dir)
 		s.log.Info(fmt.Sprintf("has.exe exit=%d durationMs=%d output=%q orderNumber=%d",

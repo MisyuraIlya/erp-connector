@@ -92,16 +92,30 @@ HTTP POST /api/sendOrder
 Add these fields to `erp-connector.yaml`:
 
 ```yaml
-sendOrderDir: "C:\\has\\import"   # Working directory for IMOVEIN files
-hasExePath:   "C:\\has\\has.exe"  # Path to Hasavshevet importer (optional)
-hasParamFile: "digi_perm.bat"     # Parameter file passed to has.exe (optional)
+sendOrderDir: "C:\\digiorders"       # Working directory for IMOVEIN files
+hasBatFile:   "C:\\Hash7\\digi.bat"  # Masofon-generated BAT launcher (preferred)
+# hasExePath and hasParamFile are the legacy direct has.exe path.
+# Use hasBatFile instead when Masofon generates the BAT launcher.
+hasExePath:   ""
+hasParamFile: ""
 ```
 
 `sendOrderDir` is also where `lastOrderNumber.json` is written (compatible
 with the legacy Node app's `config/lastOrderNumber.json` format).
 
-If `hasExePath` is empty, files are written but has.exe is not invoked (useful
-for testing the file output on non-Windows or before has.exe is configured).
+**Execution priority**: `hasBatFile` is checked first. If set, `cmd.exe /C <hasBatFile>`
+is run from the BAT file's own directory (so relative paths like `-p"digi.bat"` inside
+the BAT resolve correctly). If `hasBatFile` is empty, `hasExePath` is used as fallback.
+If both are empty, files are written but no importer is invoked (useful for testing
+file output on non-Windows or before the importer is configured).
+
+Because orders are processed by a **single worker**, the sequence for each order is:
+1. Write `IMOVEIN.doc` + `IMOVEIN.prm` to `sendOrderDir`
+2. Run `digi.bat` and **wait** for it to exit
+3. Only then dequeue and start the next order
+
+This guarantees that `IMOVEIN.doc/.prm` always contain the current order when the
+importer runs, eliminating the race that caused only the last order to be imported.
 
 ---
 
