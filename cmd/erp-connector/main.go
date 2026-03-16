@@ -1,5 +1,7 @@
 //go:build windows
 
+//go:generate rsrc -manifest app.manifest -o rsrc.syso
+
 package main
 
 import (
