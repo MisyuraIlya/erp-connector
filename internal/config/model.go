@@ -6,6 +6,7 @@ type DBDriver string
 const (
 	ERPSAP         ERPType = "sap"
 	ERPHasavshevet ERPType = "hasavshevet"
+	ERPPriority    ERPType = "priority"
 )
 
 const (
@@ -45,7 +46,7 @@ type Config struct {
 }
 
 func ErpValues() []ERPType {
-	return []ERPType{ERPSAP, ERPHasavshevet}
+	return []ERPType{ERPSAP, ERPHasavshevet, ERPPriority}
 }
 
 func ErpOption() []string {

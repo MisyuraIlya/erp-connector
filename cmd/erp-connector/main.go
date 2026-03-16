@@ -685,14 +685,6 @@ func main() {
 		uiLog.Printf("session: %s", session)
 	}
 
-	if handled, err := runHeadless(uiLog); handled {
-		if err != nil {
-			uiLog.Printf("headless error: %v", err)
-			uiStartupAlert(err)
-		}
-		return
-	}
-
 	if err := uiStartupGuard(); err != nil {
 		uiLog.Printf("startup blocked: %v", err)
 		uiStartupAlert(err)
