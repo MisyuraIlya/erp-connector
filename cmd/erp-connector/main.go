@@ -1,15 +1,9 @@
+//go:build windows
+
 package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"erp-connector/internal/config"
-	"erp-connector/internal/db"
-	"erp-connector/internal/erp/hasavshevet"
-	"erp-connector/internal/logger"
-	"erp-connector/internal/platform/autostart"
-	"erp-connector/internal/secrets"
 	"fmt"
 	"log"
 	"os"
@@ -20,50 +14,609 @@ import (
 	"strings"
 	"time"
 
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/widget"
+	"github.com/lxn/walk"
+	. "github.com/lxn/walk/declarative"
+
+	"erp-connector/internal/config"
+	"erp-connector/internal/db"
+	"erp-connector/internal/erp/hasavshevet"
+	"erp-connector/internal/logger"
+	"erp-connector/internal/platform/autostart"
+	"erp-connector/internal/secrets"
 )
 
 const connectordWindowsServiceName = "erp-connectord"
 
-func dbPasswordKey(erp config.ERPType) string {
-	return "db_password_" + string(erp)
+// mainForm holds all widget references and application state.
+type mainForm struct {
+	*walk.MainWindow
+
+	cfg    config.Config
+	logSvc logger.LoggerService
+	busy   bool // set on UI thread only; prevents concurrent save/start
+
+	erpCombo        *walk.ComboBox
+	apiListenEdit   *walk.LineEdit
+	debugCheck      *walk.CheckBox
+	bearerTokenEdit *walk.LineEdit
+
+	driverCombo *walk.ComboBox
+	hostEdit    *walk.LineEdit
+	portEdit    *walk.LineEdit
+	userEdit    *walk.LineEdit
+	dbNameEdit  *walk.LineEdit
+	passEdit    *walk.LineEdit
+	erpUserEdit *walk.LineEdit
+
+	foldersComposite *walk.Composite
+	folderEdits      []*walk.LineEdit
+
+	sendOrderSection *walk.Composite
+	sendOrderEdit    *walk.LineEdit
+	hasBatEdit       *walk.LineEdit
+
+	statusLabel *walk.Label
 }
 
-func resolveDBPassword(erp config.ERPType, entered string, required bool) (string, error) {
-	if entered != "" {
-		return entered, nil
-	}
-	if !required {
-		return "", nil
-	}
-	b, err := secrets.Get(dbPasswordKey(erp))
+func newMainForm(cfg config.Config, logSvc logger.LoggerService) (*mainForm, error) {
+	f := &mainForm{cfg: cfg, logSvc: logSvc}
+
+	err := (MainWindow{
+		AssignTo: &f.MainWindow,
+		Title:    "Digitrage ERP Connector",
+		MinSize:  Size{Width: 520, Height: 400},
+		Size:     Size{Width: 540, Height: 700},
+		Layout:   VBox{MarginsZero: true},
+		Children: []Widget{
+			ScrollView{
+				Layout: VBox{},
+				Children: []Widget{
+					// ── ERP ──────────────────────────────────────────────
+					Label{Text: "ERP"},
+					ComboBox{
+						AssignTo:              &f.erpCombo,
+						Model:                 config.ErpOption(),
+						OnCurrentIndexChanged: f.onERPChanged,
+					},
+
+					// ── API ──────────────────────────────────────────────
+					Label{Text: "API Listen (host:port)"},
+					LineEdit{AssignTo: &f.apiListenEdit},
+					CheckBox{
+						AssignTo: &f.debugCheck,
+						Text:     "Debug mode",
+					},
+					Label{Text: "Bearer token"},
+					Composite{
+						Layout: HBox{MarginsZero: true},
+						Children: []Widget{
+							LineEdit{AssignTo: &f.bearerTokenEdit},
+							PushButton{Text: "Generate key", OnClicked: f.onGenerateToken},
+						},
+					},
+
+					// ── DB ───────────────────────────────────────────────
+					HSeparator{},
+					Label{Text: "DB Settings"},
+					Label{Text: "Driver"},
+					ComboBox{
+						AssignTo: &f.driverCombo,
+						Model:    config.DBDriverOptions(),
+					},
+					Label{Text: "Host"},
+					LineEdit{AssignTo: &f.hostEdit},
+					Label{Text: "Port"},
+					LineEdit{AssignTo: &f.portEdit},
+					Label{Text: "User"},
+					LineEdit{AssignTo: &f.userEdit},
+					Label{Text: "Database"},
+					LineEdit{AssignTo: &f.dbNameEdit},
+					Label{Text: "Password"},
+					LineEdit{
+						AssignTo:     &f.passEdit,
+						PasswordMode: true,
+						CueBanner:    "Leave blank to keep existing",
+					},
+					Label{Text: "ERP User"},
+					Composite{
+						Layout: HBox{MarginsZero: true},
+						Children: []Widget{
+							LineEdit{AssignTo: &f.erpUserEdit},
+							PushButton{Text: "Test user", OnClicked: f.onTestUser},
+						},
+					},
+
+					// ── Image folders ─────────────────────────────────────
+					HSeparator{},
+					Label{Text: "Image folders"},
+					Composite{
+						AssignTo: &f.foldersComposite,
+						Layout:   VBox{MarginsZero: true},
+					},
+					PushButton{Text: "Add new folder path", OnClicked: f.onAddFolder},
+
+					// ── Hasavshevet-only section ──────────────────────────
+					Composite{
+						AssignTo: &f.sendOrderSection,
+						Layout:   VBox{MarginsZero: true},
+						Children: []Widget{
+							Label{Text: "Send order folder"},
+							Composite{
+								Layout: HBox{MarginsZero: true},
+								Children: []Widget{
+									LineEdit{AssignTo: &f.sendOrderEdit},
+									PushButton{Text: "Browse...", OnClicked: f.onBrowseSendOrder},
+								},
+							},
+							Label{Text: "Hasavshevet BAT file (digi.bat)"},
+							Composite{
+								Layout: HBox{MarginsZero: true},
+								Children: []Widget{
+									LineEdit{
+										AssignTo:  &f.hasBatEdit,
+										CueBanner: `e.g. C:\Hash7\digi.bat`,
+									},
+									PushButton{Text: "Browse...", OnClicked: f.onBrowseHasBat},
+								},
+							},
+						},
+					},
+
+					// ── Action buttons ────────────────────────────────────
+					Composite{
+						Layout: HBox{MarginsZero: true},
+						Children: []Widget{
+							PushButton{Text: "Test connection", OnClicked: f.onTestConnection},
+							PushButton{Text: "שמירה", OnClicked: f.onSave},
+							PushButton{Text: "Start server", OnClicked: f.onStartServer},
+							PushButton{Text: "Stop server", OnClicked: f.onStopServer},
+						},
+					},
+					Label{AssignTo: &f.statusLabel},
+				},
+			},
+		},
+	}.Create())
 	if err != nil {
-		return "", fmt.Errorf("db password is required to initialize Hasavshevet procedures: %w", err)
+		return nil, err
 	}
-	return string(b), nil
+
+	// Populate widget values from config.
+	f.setComboByValue(f.erpCombo, config.ErpOption(), string(cfg.ERP))
+	f.apiListenEdit.SetText(cfg.APIListen)
+	f.debugCheck.SetChecked(cfg.Debug)
+	f.bearerTokenEdit.SetText(cfg.BearerToken)
+	f.setComboByValue(f.driverCombo, config.DBDriverOptions(), string(cfg.DB.Driver))
+	f.hostEdit.SetText(cfg.DB.Host)
+	f.portEdit.SetText(strconv.Itoa(cfg.DB.Port))
+	f.userEdit.SetText(cfg.DB.User)
+	f.dbNameEdit.SetText(cfg.DB.Database)
+	f.erpUserEdit.SetText(cfg.ERPUser)
+	f.sendOrderEdit.SetText(cfg.SendOrderDir)
+	f.hasBatEdit.SetText(cfg.HasBatFile)
+
+	// Populate dynamic folder list.
+	if len(cfg.ImageFolders) == 0 {
+		f.addFolderRow("")
+	} else {
+		for _, p := range cfg.ImageFolders {
+			f.addFolderRow(p)
+		}
+	}
+
+	f.updateSendOrderVisibility(cfg.ERP)
+
+	return f, nil
 }
 
-func newBearerToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+// setComboByValue selects the combo box item matching value; falls back to index 0.
+func (*mainForm) setComboByValue(combo *walk.ComboBox, options []string, value string) {
+	for i, v := range options {
+		if v == value {
+			combo.SetCurrentIndex(i)
+			return
+		}
 	}
-	return hex.EncodeToString(b), nil
+	if len(options) > 0 {
+		combo.SetCurrentIndex(0)
+	}
 }
+
+// comboValue returns the string value of the currently selected combo box item.
+func comboValue(combo *walk.ComboBox, options []string) string {
+	i := combo.CurrentIndex()
+	if i >= 0 && i < len(options) {
+		return options[i]
+	}
+	return ""
+}
+
+// addFolderRow appends a folder entry row (text field + Browse button) to foldersComposite.
+func (f *mainForm) addFolderRow(path string) {
+	row, err := walk.NewComposite(f.foldersComposite)
+	if err != nil {
+		return
+	}
+	row.SetLayout(walk.NewHBoxLayout())
+
+	edit, err := walk.NewLineEdit(row)
+	if err != nil {
+		return
+	}
+	edit.SetText(path)
+
+	btn, err := walk.NewPushButton(row)
+	if err != nil {
+		return
+	}
+	btn.SetText("Browse...")
+	btn.SetMinMaxSize(walk.Size{Width: 75}, walk.Size{Width: 75})
+	btn.Clicked().Attach(func() {
+		dlg := &walk.FileDialog{Title: "Select folder"}
+		if ok, err := dlg.ShowBrowseFolder(f.MainWindow); err != nil {
+			f.setStatus("Folder selection error: " + err.Error())
+		} else if ok {
+			edit.SetText(dlg.FilePath)
+		}
+	})
+
+	f.folderEdits = append(f.folderEdits, edit)
+}
+
+func (f *mainForm) updateSendOrderVisibility(erp config.ERPType) {
+	f.sendOrderSection.SetVisible(erp == config.ERPHasavshevet)
+}
+
+func (f *mainForm) setStatus(text string) {
+	f.statusLabel.SetText(text)
+}
+
+// ── Event handlers (UI thread) ──────────────────────────────────────────────
+
+func (f *mainForm) onERPChanged() {
+	erp := config.ERPType(comboValue(f.erpCombo, config.ErpOption()))
+	f.updateSendOrderVisibility(erp)
+}
+
+func (f *mainForm) onGenerateToken() {
+	token, err := newBearerToken()
+	if err != nil {
+		f.setStatus("Failed to generate key: " + err.Error())
+		return
+	}
+	f.bearerTokenEdit.SetText(token)
+}
+
+func (f *mainForm) onAddFolder() {
+	f.addFolderRow("")
+}
+
+func (f *mainForm) onBrowseSendOrder() {
+	dlg := &walk.FileDialog{Title: "Select send order folder"}
+	if ok, err := dlg.ShowBrowseFolder(f.MainWindow); err != nil {
+		f.setStatus("Folder selection error: " + err.Error())
+	} else if ok {
+		f.sendOrderEdit.SetText(dlg.FilePath)
+	}
+}
+
+func (f *mainForm) onBrowseHasBat() {
+	dlg := &walk.FileDialog{
+		Title:  "Select Hasavshevet BAT file",
+		Filter: "BAT Files (*.bat)|*.bat|All Files (*.*)|*.*",
+	}
+	if ok, err := dlg.ShowOpen(f.MainWindow); err != nil {
+		f.setStatus("File selection error: " + err.Error())
+	} else if ok {
+		f.hasBatEdit.SetText(dlg.FilePath)
+	}
+}
+
+func (f *mainForm) onTestUser() {
+	loginName := strings.TrimSpace(f.erpUserEdit.Text())
+	if loginName == "" {
+		f.setStatus("ERP user is required")
+		return
+	}
+	p, ok := f.parsePort()
+	if !ok {
+		f.setStatus("Invalid DB Port")
+		return
+	}
+	tmp := f.cfg
+	tmp.DB.Driver = config.DBDriver(comboValue(f.driverCombo, config.DBDriverOptions()))
+	tmp.DB.Host = f.hostEdit.Text()
+	tmp.DB.Port = p
+	tmp.DB.User = f.userEdit.Text()
+	tmp.DB.Database = f.dbNameEdit.Text()
+	pass := f.passEdit.Text()
+
+	f.setStatus("Testing user...")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		dbConn, err := db.Open(tmp, pass, db.DefaultOptions())
+		if err != nil {
+			f.Synchronize(func() { f.setStatus("Connection failed: " + err.Error()) })
+			return
+		}
+		defer dbConn.Close()
+		var found string
+		err = dbConn.QueryRowContext(ctx, "SELECT LoginName FROM USERS WHERE LoginName = @p1", loginName).Scan(&found)
+		f.Synchronize(func() {
+			if err != nil {
+				f.setStatus("User not found: " + loginName)
+			} else {
+				f.setStatus("User OK: " + found)
+			}
+		})
+	}()
+}
+
+func (f *mainForm) onTestConnection() {
+	p, ok := f.parsePort()
+	if !ok {
+		f.setStatus("Invalid DB Port")
+		return
+	}
+	tmp := f.cfg
+	tmp.ERP = config.ERPType(comboValue(f.erpCombo, config.ErpOption()))
+	tmp.APIListen = f.apiListenEdit.Text()
+	tmp.DB.Driver = config.DBDriver(comboValue(f.driverCombo, config.DBDriverOptions()))
+	tmp.DB.Host = f.hostEdit.Text()
+	tmp.DB.Port = p
+	tmp.DB.User = f.userEdit.Text()
+	tmp.DB.Database = f.dbNameEdit.Text()
+	pass := f.passEdit.Text()
+
+	f.setStatus("Testing connection...")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+		err := db.TestConnection(ctx, tmp, pass)
+		f.Synchronize(func() {
+			if err != nil {
+				f.setStatus("Connection failed: " + err.Error())
+			} else {
+				f.setStatus("Connection OK")
+			}
+		})
+	}()
+}
+
+func (f *mainForm) onSave() {
+	if f.busy {
+		return
+	}
+	cfg, pass, err := f.readFormConfig()
+	if err != nil {
+		f.setStatus(err.Error())
+		return
+	}
+	f.busy = true
+	f.setStatus("Saving...")
+	go func() {
+		err := persistConfig(cfg, pass, f.logSvc)
+		f.Synchronize(func() {
+			f.busy = false
+			if err != nil {
+				f.setStatus(err.Error())
+			} else {
+				f.cfg = cfg
+				f.setStatus("נשמר בהצלחה.")
+			}
+		})
+	}()
+}
+
+func (f *mainForm) onStartServer() {
+	if f.busy {
+		return
+	}
+	cfg, pass, err := f.readFormConfig()
+	if err != nil {
+		f.setStatus(err.Error())
+		return
+	}
+	f.busy = true
+	f.setStatus("Saving and starting server...")
+	go func() {
+		if err := persistConfig(cfg, pass, f.logSvc); err != nil {
+			f.Synchronize(func() {
+				f.busy = false
+				f.setStatus(err.Error())
+			})
+			return
+		}
+		daemonPath, err := findConnectordBinary()
+		if err != nil {
+			f.Synchronize(func() {
+				f.busy = false
+				f.setStatus("Start failed: " + err.Error())
+			})
+			return
+		}
+
+		var msg string
+		if runtime.GOOS == "windows" {
+			created, err := autostart.EnsureWindowsServiceAutoStart(connectordWindowsServiceName, daemonPath)
+			if err != nil {
+				f.Synchronize(func() {
+					f.busy = false
+					f.setStatus("Failed to create/update server service: " + err.Error())
+				})
+				return
+			}
+			if err := autostart.StartWindowsService(connectordWindowsServiceName); err != nil {
+				f.Synchronize(func() {
+					f.busy = false
+					f.setStatus("Failed to start server service: " + err.Error())
+				})
+				return
+			}
+			msg = "Server service started."
+			if created {
+				msg = "Server service created and started."
+			}
+		} else {
+			cmd := exec.Command(daemonPath)
+			if err := cmd.Start(); err != nil {
+				f.Synchronize(func() {
+					f.busy = false
+					f.setStatus("Failed to start server: " + err.Error())
+				})
+				return
+			}
+			_ = cmd.Process.Release()
+			msg = "Server started."
+		}
+
+		f.Synchronize(func() {
+			f.busy = false
+			f.cfg = cfg
+			f.setStatus(msg)
+		})
+	}()
+}
+
+func (f *mainForm) onStopServer() {
+	if f.busy {
+		return
+	}
+	f.busy = true
+	f.setStatus("Stopping server...")
+	go func() {
+		err := autostart.StopWindowsService(connectordWindowsServiceName, 20*time.Second)
+		f.Synchronize(func() {
+			f.busy = false
+			if err != nil {
+				f.setStatus("Failed to stop server service: " + err.Error())
+			} else {
+				f.setStatus("Server service stopped.")
+			}
+		})
+	}()
+}
+
+// ── Config helpers ───────────────────────────────────────────────────────────
+
+// readFormConfig reads all widget values on the UI thread and returns a Config
+// and the password string. Must be called from the UI goroutine.
+func (f *mainForm) readFormConfig() (config.Config, string, error) {
+	p, ok := f.parsePort()
+	if !ok {
+		return config.Config{}, "", fmt.Errorf("invalid DB Port")
+	}
+
+	cfg := f.cfg
+	cfg.ERP = config.ERPType(comboValue(f.erpCombo, config.ErpOption()))
+	cfg.APIListen = f.apiListenEdit.Text()
+	cfg.Debug = f.debugCheck.Checked()
+	cfg.BearerToken = strings.TrimSpace(f.bearerTokenEdit.Text())
+	cfg.DB.Driver = config.DBDriver(comboValue(f.driverCombo, config.DBDriverOptions()))
+	cfg.DB.Host = f.hostEdit.Text()
+	cfg.DB.Port = p
+	cfg.DB.User = f.userEdit.Text()
+	cfg.DB.Database = f.dbNameEdit.Text()
+	cfg.ERPUser = strings.TrimSpace(f.erpUserEdit.Text())
+
+	if cfg.ERP == config.ERPHasavshevet && strings.TrimSpace(cfg.DB.Database) == "" {
+		return config.Config{}, "", fmt.Errorf("DB database is required for Hasavshevet")
+	}
+
+	folders := make([]string, 0, len(f.folderEdits))
+	for _, edit := range f.folderEdits {
+		if p := strings.TrimSpace(edit.Text()); p != "" {
+			folders = append(folders, p)
+		}
+	}
+	cfg.ImageFolders = folders
+
+	if cfg.ERP == config.ERPHasavshevet {
+		cfg.SendOrderDir = strings.TrimSpace(f.sendOrderEdit.Text())
+		cfg.HasBatFile = strings.TrimSpace(f.hasBatEdit.Text())
+	} else {
+		cfg.SendOrderDir = ""
+		cfg.HasBatFile = ""
+	}
+
+	return cfg, f.passEdit.Text(), nil
+}
+
+// parsePort parses and validates the port field. UI thread only.
+func (f *mainForm) parsePort() (int, bool) {
+	p, err := strconv.Atoi(f.portEdit.Text())
+	if err != nil || p <= 0 || p > 65535 {
+		return 0, false
+	}
+	return p, true
+}
+
+// persistConfig performs all I/O: DB procedure setup, password save, config save.
+// Safe to call from a background goroutine.
+func persistConfig(cfg config.Config, password string, logSvc logger.LoggerService) error {
+	pw, err := resolveDBPassword(cfg.ERP, password, cfg.ERP == config.ERPHasavshevet)
+	if err != nil {
+		return err
+	}
+
+	if cfg.ERP == config.ERPHasavshevet {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+
+		dbConn, err := db.Open(cfg, pw, db.DefaultOptions())
+		if err != nil {
+			return fmt.Errorf("failed to connect for Hasavshevet procedure setup: %w", err)
+		}
+		defer dbConn.Close()
+
+		created, err := hasavshevet.EnsureGPriceBulkProcedure(ctx, dbConn)
+		if err != nil {
+			logSvc.Error("failed to initialize GPRICE_Bulk", err)
+			return fmt.Errorf("failed to initialize GPRICE_Bulk: %w", err)
+		}
+		if created {
+			logSvc.Success("GPRICE_Bulk created")
+		} else {
+			logSvc.Info("GPRICE_Bulk already exists")
+		}
+
+		created, err = hasavshevet.EnsureOnHandStockForSkusProcedure(ctx, dbConn)
+		if err != nil {
+			logSvc.Error("failed to initialize GetOnHandStockForSkus", err)
+			return fmt.Errorf("failed to initialize GetOnHandStockForSkus: %w", err)
+		}
+		if created {
+			logSvc.Success("GetOnHandStockForSkus created")
+		} else {
+			logSvc.Info("GetOnHandStockForSkus already exists")
+		}
+	}
+
+	if password != "" {
+		if err := secrets.Set(dbPasswordKey(cfg.ERP), []byte(password)); err != nil {
+			return fmt.Errorf("failed to save password: %w", err)
+		}
+	}
+
+	if err := config.Save(cfg); err != nil {
+		return fmt.Errorf("error saving config: %w", err)
+	}
+	return nil
+}
+
+// ── Binary discovery ─────────────────────────────────────────────────────────
 
 func findConnectordBinary() (string, error) {
-	candidates := make([]string, 0, 4)
-	searchDirs := make([]string, 0, 2)
+	var searchDirs []string
+	var candidates []string
+
 	if exePath, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exePath)
-		searchDirs = append(searchDirs, exeDir)
+		dir := filepath.Dir(exePath)
+		searchDirs = append(searchDirs, dir)
 		candidates = append(candidates,
-			filepath.Join(exeDir, "erp-connectord"),
-			filepath.Join(exeDir, "erp-connectord.exe"),
+			filepath.Join(dir, "erp-connectord"),
+			filepath.Join(dir, "erp-connectord.exe"),
 		)
 	}
 	if wd, err := os.Getwd(); err == nil {
@@ -73,17 +626,16 @@ func findConnectordBinary() (string, error) {
 			filepath.Join(wd, "erp-connectord.exe"),
 		)
 	}
-	for _, candidate := range candidates {
-		info, err := os.Stat(candidate)
-		if err == nil && !info.IsDir() {
-			return candidate, nil
+
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return c, nil
 		}
 	}
-	if p, err := exec.LookPath("erp-connectord"); err == nil {
-		return p, nil
-	}
-	if p, err := exec.LookPath("erp-connectord.exe"); err == nil {
-		return p, nil
+	for _, name := range []string{"erp-connectord", "erp-connectord.exe"} {
+		if p, err := exec.LookPath(name); err == nil {
+			return p, nil
+		}
 	}
 	for _, dir := range searchDirs {
 		if dir == "" {
@@ -96,20 +648,13 @@ func findConnectordBinary() (string, error) {
 		if len(matches) == 0 {
 			continue
 		}
-		best := matches[0]
-		bestInfo, err := os.Stat(best)
-		if err != nil {
-			continue
+		best, bestTime := matches[0], time.Time{}
+		if info, err := os.Stat(best); err == nil {
+			bestTime = info.ModTime()
 		}
-		bestTime := bestInfo.ModTime()
-		for _, candidate := range matches[1:] {
-			info, err := os.Stat(candidate)
-			if err != nil {
-				continue
-			}
-			if info.ModTime().After(bestTime) {
-				best = candidate
-				bestTime = info.ModTime()
+		for _, c := range matches[1:] {
+			if info, err := os.Stat(c); err == nil && info.ModTime().After(bestTime) {
+				best, bestTime = c, info.ModTime()
 			}
 		}
 		return best, nil
@@ -117,9 +662,14 @@ func findConnectordBinary() (string, error) {
 	return "", fmt.Errorf("erp-connectord binary not found")
 }
 
+// ── Entry point ──────────────────────────────────────────────────────────────
+
 func main() {
+	runtime.LockOSThread()
+
 	uiLog := newUILogger()
 	defer uiLog.Close()
+
 	defer func() {
 		if rec := recover(); rec != nil {
 			uiLog.Printf("panic: %v", rec)
@@ -128,7 +678,7 @@ func main() {
 	}()
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.SetOutput(newLogWatcher(uiLog.Writer(), handleOpenGLFailure))
+	log.SetOutput(uiLog.Writer())
 
 	uiLog.Printf("startup begin")
 	if session := os.Getenv("SESSIONNAME"); session != "" {
@@ -156,429 +706,33 @@ func main() {
 		uiLog.Printf("working dir: %s", wd)
 	}
 
-	uiLog.Printf("fyne app init")
-	a := app.New()
-	uiLog.Printf("fyne app ready")
-	w := a.NewWindow("Digitrage Erp Connector")
-	uiLog.Printf("window created")
-
 	cfg, err := config.LoadOrDefault()
-	if err == nil {
-		uiLog.Printf("config loaded")
-	} else {
+	if err != nil {
 		uiLog.Printf("config load error: %v", err)
+	} else {
+		uiLog.Printf("config loaded")
 	}
+
 	logSvc, logErr := logger.New(cfg)
 	if logErr != nil {
 		logSvc = logger.NewStderr()
 		logSvc.Warn("logger init failed; using stderr")
 	}
-	defer func() {
-		_ = logSvc.Close()
-	}()
+	defer logSvc.Close()
 
-	status := widget.NewLabel("")
+	uiLog.Printf("building window")
+	f, err := newMainForm(cfg, logSvc)
 	if err != nil {
-		status.SetText("Error loading config: " + err.Error())
+		uiLog.Printf("window create error: %v", err)
+		uiStartupAlert(err)
+		return
 	}
 
-	apiListenEntry := widget.NewEntry()
-	apiListenEntry.SetText(cfg.APIListen)
-
-	debugCheck := widget.NewCheck("Debug mode", nil)
-	debugCheck.SetChecked(cfg.Debug)
-
-	bearerTokenEntry := widget.NewEntry()
-	bearerTokenEntry.SetText(cfg.BearerToken)
-	bearerTokenBtn := widget.NewButton("Generate key", func() {
-		token, err := newBearerToken()
-		if err != nil {
-			status.SetText("Failed to generate key: " + err.Error())
-			return
-		}
-		bearerTokenEntry.SetText(token)
-	})
-	bearerTokenRow := container.NewBorder(nil, nil, nil, bearerTokenBtn, bearerTokenEntry)
-
-	driverSelect := widget.NewSelect(config.DBDriverOptions(), func(string) {})
-	driverSelect.SetSelected(string(cfg.DB.Driver))
-
-	hostEntry := widget.NewEntry()
-	hostEntry.SetText(cfg.DB.Host)
-
-	portEntry := widget.NewEntry()
-	portEntry.SetText(strconv.Itoa(cfg.DB.Port))
-
-	userEntry := widget.NewEntry()
-	userEntry.SetText(cfg.DB.User)
-
-	dbEntry := widget.NewEntry()
-	dbEntry.SetText(cfg.DB.Database)
-
-	passEntry := widget.NewPasswordEntry()
-	passEntry.SetPlaceHolder("Leave blank to keep existing")
-
-	erpUserEntry := widget.NewEntry()
-	erpUserEntry.SetText(cfg.ERPUser)
-	testUserBtn := widget.NewButton("Test user", func() {
-		loginName := strings.TrimSpace(erpUserEntry.Text)
-		if loginName == "" {
-			status.SetText("ERP user is required")
-			return
-		}
-		tmp := cfg
-		tmp.DB.Driver = config.DBDriver(driverSelect.Selected)
-		tmp.DB.Host = hostEntry.Text
-		p, err := strconv.Atoi(portEntry.Text)
-		if err != nil || p <= 0 || p > 65535 {
-			status.SetText("Invalid DB Port")
-			return
-		}
-		tmp.DB.Port = p
-		tmp.DB.User = userEntry.Text
-		tmp.DB.Database = dbEntry.Text
-
-		status.SetText("Testing user...")
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-
-		dbConn, err := db.Open(tmp, passEntry.Text, db.DefaultOptions())
-		if err != nil {
-			status.SetText("Connection failed: " + err.Error())
-			return
-		}
-		defer dbConn.Close()
-
-		var found string
-		err = dbConn.QueryRowContext(ctx, "SELECT LoginName FROM USERS WHERE LoginName = @p1", loginName).Scan(&found)
-		if err != nil {
-			status.SetText("User not found: " + loginName)
-			return
-		}
-		status.SetText("User OK: " + found)
-	})
-	erpUserRow := container.NewBorder(nil, nil, nil, testUserBtn, erpUserEntry)
-
-	erpSelect := widget.NewSelect(config.ErpOption(), func(string) {})
-	erpSelect.SetSelected(string(cfg.ERP))
-
-	folderEntries := []*widget.Entry{}
-	foldersBox := container.NewVBox()
-	addFolderRow := func(path string) {
-		entry := widget.NewEntry()
-		entry.SetText(path)
-		browseBtn := widget.NewButton("Browse", func() {
-			dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
-				if err != nil {
-					status.SetText("Folder selection error: " + err.Error())
-					return
-				}
-				if uri == nil {
-					return
-				}
-				entry.SetText(uri.Path())
-			}, w)
-		})
-		folderEntries = append(folderEntries, entry)
-		foldersBox.Add(container.NewBorder(nil, nil, nil, browseBtn, entry))
-		foldersBox.Refresh()
+	if err != nil {
+		f.statusLabel.SetText("Error loading config: " + err.Error())
 	}
 
-	if len(cfg.ImageFolders) == 0 {
-		addFolderRow("")
-	} else {
-		for _, p := range cfg.ImageFolders {
-			addFolderRow(p)
-		}
-	}
-
-	addFolderBtn := widget.NewButton("Add new folder path", func() {
-		addFolderRow("")
-	})
-
-	sendOrderEntry := widget.NewEntry()
-	sendOrderEntry.SetText(cfg.SendOrderDir)
-	sendOrderBrowseBtn := widget.NewButton("Browse", func() {
-		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
-			if err != nil {
-				status.SetText("Folder selection error: " + err.Error())
-				return
-			}
-			if uri == nil {
-				return
-			}
-			sendOrderEntry.SetText(uri.Path())
-		}, w)
-	})
-	sendOrderRow := container.NewBorder(nil, nil, nil, sendOrderBrowseBtn, sendOrderEntry)
-
-	hasBatEntry := widget.NewEntry()
-	hasBatEntry.SetPlaceHolder(`e.g. C:\Hash7\digi.bat`)
-	hasBatEntry.SetText(cfg.HasBatFile)
-	hasBatBrowseBtn := widget.NewButton("Browse", func() {
-		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
-			if err != nil {
-				status.SetText("File selection error: " + err.Error())
-				return
-			}
-			if reader == nil {
-				return
-			}
-			defer reader.Close()
-			hasBatEntry.SetText(reader.URI().Path())
-		}, w)
-	})
-	hasBatRow := container.NewBorder(nil, nil, nil, hasBatBrowseBtn, hasBatEntry)
-
-	sendOrderBox := container.NewVBox(
-		widget.NewLabel("Send order folder"),
-		sendOrderRow,
-		widget.NewLabel("Hasavshevet BAT file (digi.bat)"),
-		hasBatRow,
-	)
-
-	updateSendOrderVisibility := func(erp config.ERPType) {
-		if erp == config.ERPHasavshevet {
-			sendOrderBox.Show()
-			return
-		}
-		sendOrderBox.Hide()
-	}
-	erpSelect.OnChanged = func(selected string) {
-		updateSendOrderVisibility(config.ERPType(selected))
-	}
-	updateSendOrderVisibility(cfg.ERP)
-
-	testBtn := widget.NewButton("Test connection", func() {
-		tmp := cfg
-		tmp.ERP = config.ERPType(erpSelect.Selected)
-		tmp.APIListen = apiListenEntry.Text
-		tmp.DB.Driver = config.DBDriver(driverSelect.Selected)
-		tmp.DB.Host = hostEntry.Text
-
-		p, err := strconv.Atoi(portEntry.Text)
-		if err != nil || p <= 0 || p > 65535 {
-			status.SetText("Invalid DB Port")
-			return
-		}
-
-		tmp.DB.Port = p
-		tmp.DB.User = userEntry.Text
-		tmp.DB.Database = dbEntry.Text
-
-		status.SetText("Testing connection...")
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		defer cancel()
-
-		errTest := db.TestConnection(ctx, tmp, passEntry.Text)
-		if errTest != nil {
-			status.SetText("Conntextion faild:" + errTest.Error())
-			return
-		}
-
-		status.SetText("Connection OK")
-	})
-
-	saveConfig := func() error {
-		cfg.ERP = config.ERPType(erpSelect.Selected)
-		cfg.APIListen = apiListenEntry.Text
-		cfg.Debug = debugCheck.Checked
-		cfg.BearerToken = strings.TrimSpace(bearerTokenEntry.Text)
-		cfg.DB.Driver = config.DBDriver(driverSelect.Selected)
-		cfg.DB.Host = hostEntry.Text
-
-		p, err := strconv.Atoi(portEntry.Text)
-
-		if err != nil || p <= 0 || p > 65535 {
-			return fmt.Errorf("Invalid DB PORT")
-		}
-
-		cfg.DB.Port = p
-		cfg.DB.User = userEntry.Text
-		cfg.DB.Database = dbEntry.Text
-		cfg.ERPUser = strings.TrimSpace(erpUserEntry.Text)
-
-		if cfg.ERP == config.ERPHasavshevet && strings.TrimSpace(cfg.DB.Database) == "" {
-			return fmt.Errorf("DB database is required for Hasavshevet")
-		}
-
-		imageFolders := make([]string, 0, len(folderEntries))
-		for _, entry := range folderEntries {
-			path := strings.TrimSpace(entry.Text)
-			if path == "" {
-				continue
-			}
-			imageFolders = append(imageFolders, path)
-		}
-		cfg.ImageFolders = imageFolders
-
-		if cfg.ERP == config.ERPHasavshevet {
-			cfg.SendOrderDir = strings.TrimSpace(sendOrderEntry.Text)
-			cfg.HasBatFile = strings.TrimSpace(hasBatEntry.Text)
-		} else {
-			cfg.SendOrderDir = ""
-			cfg.HasBatFile = ""
-		}
-
-		password, err := resolveDBPassword(cfg.ERP, passEntry.Text, cfg.ERP == config.ERPHasavshevet)
-		if err != nil {
-			return err
-		}
-
-		if cfg.ERP == config.ERPHasavshevet {
-			ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-			defer cancel()
-
-			dbConn, err := db.Open(cfg, password, db.DefaultOptions())
-			if err != nil {
-				return fmt.Errorf("failed to connect for Hasavshevet procedure setup: %w", err)
-			}
-			defer dbConn.Close()
-
-			created, err := hasavshevet.EnsureGPriceBulkProcedure(ctx, dbConn)
-			if err != nil {
-				logSvc.Error("failed to initialize GPRICE_Bulk", err)
-				return fmt.Errorf("failed to initialize GPRICE_Bulk: %w", err)
-			}
-			if created {
-				logSvc.Success("GPRICE_Bulk created")
-			} else {
-				logSvc.Info("GPRICE_Bulk already exists")
-			}
-
-			created, err = hasavshevet.EnsureOnHandStockForSkusProcedure(ctx, dbConn)
-			if err != nil {
-				logSvc.Error("failed to initialize GetOnHandStockForSkus", err)
-				return fmt.Errorf("failed to initialize GetOnHandStockForSkus: %w", err)
-			}
-			if created {
-				logSvc.Success("GetOnHandStockForSkus created")
-			} else {
-				logSvc.Info("GetOnHandStockForSkus already exists")
-			}
-		}
-
-		if passEntry.Text != "" {
-			errPass := secrets.Set(dbPasswordKey(cfg.ERP), []byte(passEntry.Text))
-			if errPass != nil {
-				return fmt.Errorf("failed to save password: %s", errPass.Error())
-			}
-		}
-
-		errSave := config.Save(cfg)
-		if errSave != nil {
-			return fmt.Errorf("Error saving config: %s", errSave.Error())
-		}
-		return nil
-	}
-
-	saveBtn := widget.NewButton("שמירה", func() {
-		if err := saveConfig(); err != nil {
-			status.SetText(err.Error())
-			return
-		}
-		status.SetText("נשמר בהצלחה.")
-	})
-
-	startServerBtn := widget.NewButton("Start server", func() {
-		if err := saveConfig(); err != nil {
-			status.SetText(err.Error())
-			return
-		}
-		daemonPath, err := findConnectordBinary()
-		if err != nil {
-			status.SetText("Start failed: " + err.Error())
-			return
-		}
-		if runtime.GOOS == "windows" {
-			created, err := autostart.EnsureWindowsServiceAutoStart(connectordWindowsServiceName, daemonPath)
-			if err != nil {
-				status.SetText("Failed to create/update server service: " + err.Error())
-				return
-			}
-			if err := autostart.StartWindowsService(connectordWindowsServiceName); err != nil {
-				status.SetText("Failed to start server service: " + err.Error())
-				return
-			}
-			if created {
-				status.SetText("Server service created and started.")
-			} else {
-				status.SetText("Server service started.")
-			}
-			return
-		}
-
-		cmd := exec.Command(daemonPath)
-		if err := cmd.Start(); err != nil {
-			status.SetText("Failed to start server: " + err.Error())
-			return
-		}
-		if err := cmd.Process.Release(); err != nil {
-			status.SetText("Server started, but release failed: " + err.Error())
-			return
-		}
-		status.SetText("Server started.")
-	})
-
-	stopServerBtn := widget.NewButton("Stop server", func() {
-		if runtime.GOOS != "windows" {
-			status.SetText("Stop server service is supported on Windows only.")
-			return
-		}
-		if err := autostart.StopWindowsService(connectordWindowsServiceName, 20*time.Second); err != nil {
-			status.SetText("Failed to stop server service: " + err.Error())
-			return
-		}
-		status.SetText("Server service stopped.")
-	})
-
-	content := container.NewVBox(
-		widget.NewLabel("ERP"),
-		erpSelect,
-
-		widget.NewLabel("API Listen (host:port)"),
-		apiListenEntry,
-		debugCheck,
-		widget.NewLabel("Bearer token"),
-		bearerTokenRow,
-
-		widget.NewSeparator(),
-		widget.NewLabel("DB Settings"),
-		widget.NewLabel("Driver"),
-		driverSelect,
-		widget.NewLabel("Host"),
-		hostEntry,
-		widget.NewLabel("Port"),
-		portEntry,
-		widget.NewLabel("User"),
-		userEntry,
-		widget.NewLabel("Database"),
-		dbEntry,
-		widget.NewLabel("Password"),
-		passEntry,
-		widget.NewLabel("ERP User"),
-		erpUserRow,
-
-		widget.NewSeparator(),
-		widget.NewLabel("Image folders"),
-		foldersBox,
-		addFolderBtn,
-		sendOrderBox,
-
-		container.NewHBox(testBtn, saveBtn, startServerBtn, stopServerBtn),
-		status,
-	)
-
-	scroll := container.NewVScroll(content)
-	w.SetContent(scroll)
-
-	w.Resize(fyne.NewSize(520, 690))
-	w.SetFixedSize(false)
-	uiLog.Printf("show window")
-	w.Show()
-	w.CenterOnScreen()
-	w.RequestFocus()
 	uiLog.Printf("run loop")
-	a.Run()
+	f.MainWindow.Run()
 	uiLog.Printf("run loop exit")
 }

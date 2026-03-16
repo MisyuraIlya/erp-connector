@@ -2,15 +2,21 @@
 
 ## Components
 
-### 1) GUI: `cmd/erp-connector` (Fyne)
+### 1) GUI: `cmd/erp-connector` (walk — native Win32)
 Responsibilities:
 - Let the user select ERP type (SAP or Hasavshevet).
 - Configure DB connection parameters + “Test connection”.
-- Configure REST API port.
-- Configure N image folders.
-- Hasavshevet only: configure sendOrder output folder.
+- Configure REST API port and bearer token.
+- Configure N image folders (dynamic list with folder browser).
+- Hasavshevet only: configure sendOrder output folder and digi.bat path.
 - Hasavshevet only: initialize required DB procedures (`GPRICE_Bulk`, `GetOnHandStockForSkus`) on save if missing.
 - Write config to disk.
+- Start / stop the `erp-connectord` Windows Service.
+
+The GUI is built with **walk** (`github.com/lxn/walk`) which uses Win32 GDI native controls.
+No OpenGL or GPU is required; works on any Windows display including Hyper-V and RDP sessions.
+
+Also supports a full **headless / CLI mode** (`--headless`) for environments without any display.
 
 ### 2) Daemon: `cmd/erp-connectord`
 Responsibilities:
