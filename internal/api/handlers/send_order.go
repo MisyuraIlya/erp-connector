@@ -141,7 +141,7 @@ func NewSendOrderHandler(queue *hasavshevet.OrderQueue) http.HandlerFunc {
 			Details:      details,
 		}
 
-		jobID, err := queue.Submit(orderReq)
+		lastOrderNumber, err := queue.Submit(orderReq)
 		if err != nil {
 			utils.WriteError(w, http.StatusServiceUnavailable,
 				"Order queue full; try again later", "QUEUE_FULL", nil)
@@ -150,7 +150,7 @@ func NewSendOrderHandler(queue *hasavshevet.OrderQueue) http.HandlerFunc {
 
 		utils.WriteJSON(w, http.StatusAccepted, dto.SendOrderAccepted{
 			Status: "queued",
-			JobID:  jobID,
+			JobID:  lastOrderNumber,
 			Meta:   dto.SendOrderMeta{DurationMs: time.Since(start).Milliseconds()},
 		})
 	}

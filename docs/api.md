@@ -108,8 +108,11 @@ Notes:
 
 Response `202 Accepted`:
 ```json
-{ "status": "queued", "jobId": "a1b2c3d4e5f6g7h8", "meta": { "durationMs": 2 } }
+{ "status": "queued", "jobId": "1000295", "meta": { "durationMs": 2 } }
 ```
+
+Notes:
+- `jobId` is the reserved Hasavshevet order number (`lastOrderNumber`) as a string.
 
 Errors:
 ```json

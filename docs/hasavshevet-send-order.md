@@ -8,6 +8,8 @@ Processing is **asynchronous**: the API returns `202 Accepted` with a `jobId`
 immediately; file writing and has.exe invocation happen in a single background
 worker.
 
+`jobId` is the reserved `lastOrderNumber` value (returned as a string).
+
 ## Improvements over the legacy Node.js flow
 
 | Legacy (Node.js)                         | New (Go)                                      |
@@ -29,20 +31,20 @@ HTTP POST /api/sendOrder
   Handler (validate)
         │
         ▼
-  OrderQueue.Submit()  ──► 202 { status:"queued", jobId:"..." }
+  OrderQueue.Submit()  ──► reserve OrderNumberStore.Next()
+                         └─► 202 { status:"queued", jobId:"<lastOrderNumber>" }
         │
         ▼ (background, single worker)
   Sender.ProcessOrder()
     1. validateOrderRequest()
-    2. OrderNumberStore.Next()      — mutex + JSON file
-    3. queryAccount()               — DB: [dbName].[dbo].[Accounts]
-    4. queryRate()                  — DB: [dbName].[dbo].[Rates]
-    5. buildIMOVEIN()               — map request → stockHeader + []stockMove
-    6. generateDOC()                — fixed-length Windows-1255 bytes
-    7. generatePRM()                — position-map Windows-1255 bytes
-    8. Write IMOVEIN.doc/.prm       — to SendOrderDir (active files)
-    9. Write IMOVEIN_N.doc/.prm     — to SendOrderDir/history/<N>/ (audit)
-   10. runImporter()                — exec has.exe (Windows); no-op elsewhere
+    2. queryAccount()               — DB: [dbName].[dbo].[Accounts]
+    3. queryRate()                  — DB: [dbName].[dbo].[Rates]
+    4. buildIMOVEIN()               — map request → stockHeader + []stockMove
+    5. generateDOC()                — fixed-length Windows-1255 bytes
+    6. generatePRM()                — position-map Windows-1255 bytes
+    7. Write IMOVEIN.doc/.prm       — to SendOrderDir (active files)
+    8. Write IMOVEIN_N.doc/.prm     — to SendOrderDir/history/<N>/ (audit)
+    9. runImporter()                — exec has.exe (Windows); no-op elsewhere
 ```
 
 ---

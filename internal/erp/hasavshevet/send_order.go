@@ -79,6 +79,28 @@ func NewSender(db *sql.DB, cfg config.Config, numberStore *OrderNumberStore, log
 // ProcessOrder executes the full send-order pipeline for one order.
 // It is NOT safe for concurrent IMOVEIN file access; always call via OrderQueue.
 func (s *Sender) ProcessOrder(ctx context.Context, req OrderRequest) (*OrderResult, error) {
+	orderNum, err := s.nextOrderNumber()
+	if err != nil {
+		return nil, err
+	}
+	return s.processOrderWithNumber(ctx, req, orderNum)
+}
+
+// nextOrderNumber increments and persists the order sequence.
+func (s *Sender) nextOrderNumber() (int64, error) {
+	if s.numberStore == nil {
+		return 0, errors.New("order number store is not configured")
+	}
+	orderNum, err := s.numberStore.Next()
+	if err != nil {
+		return 0, fmt.Errorf("get order number: %w", err)
+	}
+	return orderNum, nil
+}
+
+// processOrderWithNumber executes the full send-order flow using a pre-reserved
+// order number. If orderNum is zero, it reserves one before continuing.
+func (s *Sender) processOrderWithNumber(ctx context.Context, req OrderRequest, orderNum int64) (*OrderResult, error) {
 	if strings.TrimSpace(s.cfg.SendOrderDir) == "" {
 		return nil, errors.New("sendOrderDir is not configured")
 	}
@@ -94,10 +116,13 @@ func (s *Sender) ProcessOrder(ctx context.Context, req OrderRequest) (*OrderResu
 		return nil, err
 	}
 
-	// 2. Concurrency-safe order number
-	orderNum, err := s.numberStore.Next()
-	if err != nil {
-		return nil, fmt.Errorf("get order number: %w", err)
+	// 2. Concurrency-safe order number (reserved at queue submit when possible).
+	if orderNum == 0 {
+		var err error
+		orderNum, err = s.nextOrderNumber()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	s.log.Info(fmt.Sprintf("processing order orderNumber=%d historyId=%s userExtId=%s dbName=%s",

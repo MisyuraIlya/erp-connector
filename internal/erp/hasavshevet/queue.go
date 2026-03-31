@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"erp-connector/internal/logger"
@@ -32,8 +33,9 @@ type JobResult struct {
 }
 
 type orderJob struct {
-	id  string
-	req OrderRequest
+	id          string
+	orderNumber int64
+	req         OrderRequest
 }
 
 // OrderQueue is a single-worker async queue for Hasavshevet send-order jobs.
@@ -75,11 +77,11 @@ func (q *OrderQueue) run(ctx context.Context) {
 			if !ok {
 				return
 			}
-			q.setStatus(job.id, JobStatusRunning, 0, nil, nil)
-			result, err := q.sender.ProcessOrder(ctx, job.req)
+			q.setStatus(job.id, JobStatusRunning, job.orderNumber, nil, nil)
+			result, err := q.sender.processOrderWithNumber(ctx, job.req, job.orderNumber)
 			if err != nil {
 				q.log.Error(fmt.Sprintf("order job %s failed", job.id), err)
-				q.setStatus(job.id, JobStatusFailed, 0, nil, err)
+				q.setStatus(job.id, JobStatusFailed, job.orderNumber, nil, err)
 			} else {
 				q.log.Success(fmt.Sprintf("order job %s done orderNumber=%d files=%v", job.id, result.OrderNumber, result.WrittenFiles))
 				q.setStatus(job.id, JobStatusDone, result.OrderNumber, result.WrittenFiles, nil)
@@ -89,13 +91,22 @@ func (q *OrderQueue) run(ctx context.Context) {
 }
 
 // Submit enqueues an order request and returns a job ID.
+// In normal runtime this ID is the reserved lastOrderNumber as a decimal string.
 // Returns an error if the queue is full.
 func (q *OrderQueue) Submit(req OrderRequest) (string, error) {
-	jobID := newJobID()
-	job := orderJob{id: jobID, req: req}
+	jobID, orderNumber, err := q.reserveJobIdentity()
+	if err != nil {
+		return "", err
+	}
+
+	job := orderJob{id: jobID, orderNumber: orderNumber, req: req}
 
 	q.mu.Lock()
-	q.jobs[jobID] = &JobResult{ID: jobID, Status: JobStatusQueued}
+	q.jobs[jobID] = &JobResult{
+		ID:          jobID,
+		Status:      JobStatusQueued,
+		OrderNumber: orderNumber,
+	}
 	q.mu.Unlock()
 
 	select {
@@ -107,6 +118,25 @@ func (q *OrderQueue) Submit(req OrderRequest) (string, error) {
 		q.mu.Unlock()
 		return "", fmt.Errorf("order queue full (capacity %d)", defaultQueueSize)
 	}
+}
+
+// reserveJobIdentity reserves the next order number when available and uses it
+// as the externally visible job ID (for backward compatibility with clients
+// that expect sendOrder's jobId to carry the Hasavshevet order number).
+//
+// When queue sender/number store is unavailable (e.g. unit tests), it falls
+// back to a random opaque job ID.
+func (q *OrderQueue) reserveJobIdentity() (string, int64, error) {
+	if q.sender == nil || q.sender.numberStore == nil {
+		return newJobID(), 0, nil
+	}
+
+	orderNumber, err := q.sender.numberStore.Next()
+	if err != nil {
+		return "", 0, fmt.Errorf("reserve order number: %w", err)
+	}
+
+	return strconv.FormatInt(orderNumber, 10), orderNumber, nil
 }
 
 // Status returns the current result for a job ID, or false if not found.

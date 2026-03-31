@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
+	"erp-connector/internal/config"
 	"erp-connector/internal/erp/hasavshevet"
 )
 
@@ -17,13 +19,21 @@ func newTestQueue() *hasavshevet.OrderQueue {
 	return hasavshevet.NewOrderQueue(nil, &noopLogger{})
 }
 
+func newTestQueueWithNumberStore(t *testing.T) *hasavshevet.OrderQueue {
+	t.Helper()
+	dir := t.TempDir()
+	numStore := hasavshevet.NewOrderNumberStore(filepath.Join(dir, "lastOrderNumber.json"))
+	sender := hasavshevet.NewSender(nil, config.Config{}, numStore, &noopLogger{})
+	return hasavshevet.NewOrderQueue(sender, &noopLogger{})
+}
+
 type noopLogger struct{}
 
-func (l *noopLogger) Info(msg string)            {}
+func (l *noopLogger) Info(msg string)             {}
 func (l *noopLogger) Error(msg string, err error) {}
-func (l *noopLogger) Warn(msg string)            {}
-func (l *noopLogger) Success(msg string)         {}
-func (l *noopLogger) Close() error               { return nil }
+func (l *noopLogger) Warn(msg string)             {}
+func (l *noopLogger) Success(msg string)          {}
+func (l *noopLogger) Close() error                { return nil }
 
 func sendOrderRequest(t *testing.T, handler http.HandlerFunc, body any) *httptest.ResponseRecorder {
 	t.Helper()
@@ -108,7 +118,7 @@ func TestSendOrderHandler_MissingSKU(t *testing.T) {
 
 // TestSendOrderHandler_ValidRequest returns 202 Accepted with a jobId.
 func TestSendOrderHandler_ValidRequest(t *testing.T) {
-	q := newTestQueue()
+	q := newTestQueueWithNumberStore(t)
 	// Start the queue so Submit doesn't block (but with no sender, jobs are never processed)
 	// We need to start the queue to prevent "queue full" on the channel send.
 	// Actually, since defaultQueueSize=64 and we only submit once, Submit won't block
@@ -126,8 +136,8 @@ func TestSendOrderHandler_ValidRequest(t *testing.T) {
 	if resp["status"] != "queued" {
 		t.Errorf("response status = %q, want 'queued'", resp["status"])
 	}
-	if resp["jobId"] == "" || resp["jobId"] == nil {
-		t.Errorf("response missing jobId")
+	if resp["jobId"] != "1" {
+		t.Errorf("response jobId = %v, want reserved lastOrderNumber '1'", resp["jobId"])
 	}
 }
 
