@@ -83,3 +83,17 @@ When implementing a change:
 - Disabling auth “for debugging”
 - Executing arbitrary SQL (non-SELECT)
 - Returning raw DB driver errors directly to clients
+
+## Known AI Failure Patterns (Do Not Repeat)
+
+### SQL safety
+- ❌ Adding a new SQL execution path that skips the keyword blocklist in `internal/db` — all queries must go through the validator; see `docs/sql-validation.md`
+- ❌ String-concatenating user input into SQL — parameters must always be bound; no exceptions
+
+### File path security
+- ❌ Using `filepath.Join` on user-supplied paths without canonical path checking — `..` traversal bypasses `filepath.Join`; always resolve to canonical path and verify against the allow-list
+- ❌ Accepting absolute paths from API requests — reject at the handler level before any fs operation
+
+### Architecture
+- ❌ Adding business logic to `cmd/` entrypoints — handlers belong in `internal/api/handlers`, DB in `internal/db`, ERP in `internal/erp/<erp-name>`
+- ❌ Removing the Bearer token check from any route “for testing” — auth is mandatory on all routes per `docs/security.md`
