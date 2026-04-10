@@ -11,7 +11,7 @@ A Go application providing a local HTTP REST API gateway between the main app an
 
 ## Mandatory reading before any code changes
 
-1. `docs/README.md`
+1. `docs/CLAUDE.md`
 2. `docs/architecture.md`
 3. `docs/security.md`
 4. `docs/sql-validation.md`
