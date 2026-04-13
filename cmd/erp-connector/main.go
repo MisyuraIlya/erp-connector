@@ -21,11 +21,8 @@ import (
 
 	"erp-connector/internal/config"
 	"erp-connector/internal/db"
-	"erp-connector/internal/email"
 	"erp-connector/internal/erp/hasavshevet"
 	"erp-connector/internal/logger"
-	"erp-connector/internal/pdf"
-	pdfprint "erp-connector/internal/print"
 	"erp-connector/internal/platform/autostart"
 	"erp-connector/internal/secrets"
 )
@@ -59,28 +56,6 @@ type mainForm struct {
 	sendOrderSection *walk.Composite
 	sendOrderEdit    *walk.LineEdit
 	hasBatEdit       *walk.LineEdit
-
-	// PDF & Print section
-	companyNameEdit      *walk.LineEdit
-	companyAddressEdit   *walk.LineEdit
-	companyPhoneEdit     *walk.LineEdit
-	companyFaxEdit       *walk.LineEdit
-	companyEmailEdit     *walk.LineEdit
-	logoPathEdit         *walk.LineEdit
-	footerEdit           *walk.LineEdit
-	chromePathEdit       *walk.LineEdit
-	sumatraPathEdit      *walk.LineEdit
-	printAfterOrderCheck *walk.CheckBox
-	printerNameEdit      *walk.LineEdit
-
-	// Email section
-	emailAfterOrderCheck *walk.CheckBox
-	smtpHostEdit         *walk.LineEdit
-	smtpPortEdit         *walk.LineEdit
-	smtpUserEdit         *walk.LineEdit
-	smtpPassEdit         *walk.LineEdit
-	smtpFromEdit         *walk.LineEdit
-	smtpTLSCheck         *walk.CheckBox
 
 	statusLabel *walk.Label
 }
@@ -162,76 +137,9 @@ func newMainForm(cfg config.Config, logSvc logger.LoggerService) (*mainForm, err
 					},
 					PushButton{Text: "Add new folder path", OnClicked: f.onAddFolder},
 
-					// ── PDF & Print Settings ─────────────────────────────
+					// ── PDF & Email Settings (separate window) ───────────
 					HSeparator{},
-					Label{Text: "PDF & Print Settings"},
-					Label{Text: "Company Name"},
-					LineEdit{AssignTo: &f.companyNameEdit},
-					Label{Text: "Company Address"},
-					LineEdit{AssignTo: &f.companyAddressEdit},
-					Label{Text: "Company Phone"},
-					LineEdit{AssignTo: &f.companyPhoneEdit},
-					Label{Text: "Company Fax"},
-					LineEdit{AssignTo: &f.companyFaxEdit},
-					Label{Text: "Company Email"},
-					LineEdit{AssignTo: &f.companyEmailEdit},
-					Label{Text: "Logo File"},
-					Composite{
-						Layout: HBox{MarginsZero: true},
-						Children: []Widget{
-							LineEdit{AssignTo: &f.logoPathEdit},
-							PushButton{Text: "Browse...", OnClicked: f.onBrowseLogo},
-						},
-					},
-					Label{Text: "Footer Text (HTML)"},
-					LineEdit{AssignTo: &f.footerEdit},
-					Label{Text: "Chrome Path"},
-					Composite{
-						Layout: HBox{MarginsZero: true},
-						Children: []Widget{
-							LineEdit{AssignTo: &f.chromePathEdit, CueBanner: "Auto-detected if empty"},
-							PushButton{Text: "Browse...", OnClicked: f.onBrowseChrome},
-							PushButton{Text: "Auto-detect", OnClicked: f.onAutoDetectChrome},
-						},
-					},
-					Label{Text: "SumatraPDF Path"},
-					Composite{
-						Layout: HBox{MarginsZero: true},
-						Children: []Widget{
-							LineEdit{AssignTo: &f.sumatraPathEdit, CueBanner: "Auto-detected if empty"},
-							PushButton{Text: "Browse...", OnClicked: f.onBrowseSumatra},
-						},
-					},
-					CheckBox{
-						AssignTo: &f.printAfterOrderCheck,
-						Text:     "Print PDF after send order",
-					},
-					Label{Text: "Printer Name (empty = default)"},
-					LineEdit{AssignTo: &f.printerNameEdit, CueBanner: "Leave empty for default printer"},
-					PushButton{Text: "Test Print", OnClicked: f.onTestPrint},
-
-					// ── Email Settings ───────────────────────────────────
-					HSeparator{},
-					Label{Text: "Email Settings"},
-					CheckBox{
-						AssignTo: &f.emailAfterOrderCheck,
-						Text:     "Send PDF by email after send order",
-					},
-					Label{Text: "SMTP Host"},
-					LineEdit{AssignTo: &f.smtpHostEdit},
-					Label{Text: "SMTP Port"},
-					LineEdit{AssignTo: &f.smtpPortEdit, CueBanner: "587"},
-					Label{Text: "SMTP User"},
-					LineEdit{AssignTo: &f.smtpUserEdit},
-					Label{Text: "SMTP Password"},
-					LineEdit{AssignTo: &f.smtpPassEdit, PasswordMode: true, CueBanner: "Leave blank to keep existing"},
-					Label{Text: "From Address"},
-					LineEdit{AssignTo: &f.smtpFromEdit},
-					CheckBox{
-						AssignTo: &f.smtpTLSCheck,
-						Text:     "Use TLS",
-					},
-					PushButton{Text: "Test Email", OnClicked: f.onTestEmail},
+					PushButton{Text: "PDF & Email Settings...", OnClicked: f.onOpenPDFSettings},
 
 					// ── Hasavshevet-only section ──────────────────────────
 					Composite{
@@ -292,27 +200,6 @@ func newMainForm(cfg config.Config, logSvc logger.LoggerService) (*mainForm, err
 	f.erpUserEdit.SetText(cfg.ERPUser)
 	f.sendOrderEdit.SetText(cfg.SendOrderDir)
 	f.hasBatEdit.SetText(cfg.HasBatFile)
-
-	// PDF & Print fields
-	f.companyNameEdit.SetText(cfg.PDF.CompanyName)
-	f.companyAddressEdit.SetText(cfg.PDF.CompanyAddress)
-	f.companyPhoneEdit.SetText(cfg.PDF.CompanyPhone)
-	f.companyFaxEdit.SetText(cfg.PDF.CompanyFax)
-	f.companyEmailEdit.SetText(cfg.PDF.CompanyEmail)
-	f.logoPathEdit.SetText(cfg.PDF.LogoPath)
-	f.footerEdit.SetText(cfg.PDF.FooterHTML)
-	f.chromePathEdit.SetText(cfg.PDF.ChromePath)
-	f.sumatraPathEdit.SetText(cfg.PDF.SumatraPDFPath)
-	f.printAfterOrderCheck.SetChecked(cfg.PDF.PrintAfterOrder)
-	f.printerNameEdit.SetText(cfg.PDF.PrinterName)
-
-	// Email fields
-	f.emailAfterOrderCheck.SetChecked(cfg.PDF.EmailAfterOrder)
-	f.smtpHostEdit.SetText(cfg.SMTP.Host)
-	f.smtpPortEdit.SetText(strconv.Itoa(cfg.SMTP.Port))
-	f.smtpUserEdit.SetText(cfg.SMTP.User)
-	f.smtpFromEdit.SetText(cfg.SMTP.FromAddress)
-	f.smtpTLSCheck.SetChecked(cfg.SMTP.UseTLS)
 
 	// Populate dynamic folder list.
 	if len(cfg.ImageFolders) == 0 {
@@ -431,189 +318,8 @@ func (f *mainForm) onBrowseHasBat() {
 	}
 }
 
-func (f *mainForm) onBrowseLogo() {
-	dlg := &walk.FileDialog{
-		Title:  "Select logo image",
-		Filter: "Image Files (*.png;*.jpg;*.jpeg;*.bmp)|*.png;*.jpg;*.jpeg;*.bmp|All Files (*.*)|*.*",
-	}
-	if ok, err := dlg.ShowOpen(f.MainWindow); err != nil {
-		f.setStatus("File selection error: " + err.Error())
-	} else if ok {
-		f.logoPathEdit.SetText(dlg.FilePath)
-	}
-}
-
-func (f *mainForm) onBrowseChrome() {
-	dlg := &walk.FileDialog{
-		Title:  "Select Chrome/Chromium executable",
-		Filter: "Executable (*.exe)|*.exe|All Files (*.*)|*.*",
-	}
-	if ok, err := dlg.ShowOpen(f.MainWindow); err != nil {
-		f.setStatus("File selection error: " + err.Error())
-	} else if ok {
-		f.chromePathEdit.SetText(dlg.FilePath)
-	}
-}
-
-func (f *mainForm) onAutoDetectChrome() {
-	p := pdf.DetectChrome()
-	if p == "" {
-		f.setStatus("Chrome not found on this system")
-	} else {
-		f.chromePathEdit.SetText(p)
-		f.setStatus("Chrome found: " + p)
-	}
-}
-
-func (f *mainForm) onBrowseSumatra() {
-	dlg := &walk.FileDialog{
-		Title:  "Select SumatraPDF executable",
-		Filter: "Executable (*.exe)|*.exe|All Files (*.*)|*.*",
-	}
-	if ok, err := dlg.ShowOpen(f.MainWindow); err != nil {
-		f.setStatus("File selection error: " + err.Error())
-	} else if ok {
-		f.sumatraPathEdit.SetText(dlg.FilePath)
-	}
-}
-
-func (f *mainForm) onTestPrint() {
-	if f.busy {
-		return
-	}
-	f.busy = true
-	f.setStatus("Generating test PDF and printing...")
-	go func() {
-		chromePath := strings.TrimSpace(f.chromePathEdit.Text())
-		if chromePath == "" {
-			chromePath = pdf.DetectChrome()
-		}
-		if chromePath == "" {
-			f.Synchronize(func() {
-				f.busy = false
-				f.setStatus("Chrome not found; cannot generate PDF")
-			})
-			return
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-
-		gen := pdf.NewGenerator(chromePath)
-		pdfBytes, err := gen.GenerateSample(ctx,
-			strings.TrimSpace(f.companyNameEdit.Text()),
-			strings.TrimSpace(f.companyAddressEdit.Text()),
-			strings.TrimSpace(f.companyPhoneEdit.Text()),
-			strings.TrimSpace(f.companyFaxEdit.Text()),
-			strings.TrimSpace(f.companyEmailEdit.Text()),
-			strings.TrimSpace(f.logoPathEdit.Text()),
-			strings.TrimSpace(f.footerEdit.Text()),
-		)
-		if err != nil {
-			f.Synchronize(func() {
-				f.busy = false
-				f.setStatus("PDF generation failed: " + err.Error())
-			})
-			return
-		}
-
-		// Write to temp file and print
-		tmpFile := filepath.Join(os.TempDir(), "erp_connector_test_print.pdf")
-		if writeErr := os.WriteFile(tmpFile, pdfBytes, 0o644); writeErr != nil {
-			f.Synchronize(func() {
-				f.busy = false
-				f.setStatus("Failed to write temp PDF: " + writeErr.Error())
-			})
-			return
-		}
-		defer os.Remove(tmpFile)
-
-		printerName := strings.TrimSpace(f.printerNameEdit.Text())
-		sumatraPath := strings.TrimSpace(f.sumatraPathEdit.Text())
-		printErr := printPDFFile(ctx, tmpFile, printerName, sumatraPath)
-		f.Synchronize(func() {
-			f.busy = false
-			if printErr != nil {
-				f.setStatus("Print failed: " + printErr.Error())
-			} else {
-				f.setStatus("Test print sent to printer successfully.")
-			}
-		})
-	}()
-}
-
-func (f *mainForm) onTestEmail() {
-	if f.busy {
-		return
-	}
-	f.busy = true
-	f.setStatus("Sending test email...")
-	go func() {
-		// Generate sample PDF first
-		chromePath := strings.TrimSpace(f.chromePathEdit.Text())
-		if chromePath == "" {
-			chromePath = pdf.DetectChrome()
-		}
-
-		var pdfBytes []byte
-		if chromePath != "" {
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-			defer cancel()
-			gen := pdf.NewGenerator(chromePath)
-			var err error
-			pdfBytes, err = gen.GenerateSample(ctx,
-				strings.TrimSpace(f.companyNameEdit.Text()),
-				strings.TrimSpace(f.companyAddressEdit.Text()),
-				strings.TrimSpace(f.companyPhoneEdit.Text()),
-				strings.TrimSpace(f.companyFaxEdit.Text()),
-				strings.TrimSpace(f.companyEmailEdit.Text()),
-				strings.TrimSpace(f.logoPathEdit.Text()),
-				strings.TrimSpace(f.footerEdit.Text()),
-			)
-			if err != nil {
-				f.Synchronize(func() {
-					f.busy = false
-					f.setStatus("PDF generation failed: " + err.Error())
-				})
-				return
-			}
-		}
-
-		// Resolve SMTP password: use widget value if entered, otherwise load from secrets
-		smtpPass := f.smtpPassEdit.Text()
-		if smtpPass == "" {
-			if stored, err := secrets.Get("smtp_password"); err == nil {
-				smtpPass = string(stored)
-			}
-		}
-
-		smtpPort, _ := strconv.Atoi(f.smtpPortEdit.Text())
-		if smtpPort <= 0 || smtpPort > 65535 {
-			smtpPort = 587
-		}
-
-		cfg := config.SMTPConfig{
-			Host:        strings.TrimSpace(f.smtpHostEdit.Text()),
-			Port:        smtpPort,
-			User:        strings.TrimSpace(f.smtpUserEdit.Text()),
-			FromAddress: strings.TrimSpace(f.smtpFromEdit.Text()),
-			UseTLS:      f.smtpTLSCheck.Checked(),
-		}
-
-		sender := email.NewSender(cfg, smtpPass)
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
-		err := sender.SendTestEmail(ctx, pdfBytes)
-		f.Synchronize(func() {
-			f.busy = false
-			if err != nil {
-				f.setStatus("Email test failed: " + err.Error())
-			} else {
-				f.setStatus("Test email sent successfully to " + cfg.FromAddress)
-			}
-		})
-	}()
+func (f *mainForm) onOpenPDFSettings() {
+	showPDFSettingsDialog(f.MainWindow, &f.cfg, f.logSvc)
 }
 
 func (f *mainForm) onTestUser() {
@@ -697,14 +403,10 @@ func (f *mainForm) onSave() {
 		f.setStatus(err.Error())
 		return
 	}
-	smtpPass := f.smtpPassEdit.Text()
 	f.busy = true
 	f.setStatus("Saving...")
 	go func() {
 		err := persistConfig(cfg, pass, f.logSvc)
-		if err == nil {
-			err = persistSMTPPassword(smtpPass)
-		}
 		f.Synchronize(func() {
 			f.busy = false
 			if err != nil {
@@ -848,31 +550,6 @@ func (f *mainForm) readFormConfig() (config.Config, string, error) {
 		cfg.HasBatFile = ""
 	}
 
-	// PDF & Print config
-	cfg.PDF.CompanyName = strings.TrimSpace(f.companyNameEdit.Text())
-	cfg.PDF.CompanyAddress = strings.TrimSpace(f.companyAddressEdit.Text())
-	cfg.PDF.CompanyPhone = strings.TrimSpace(f.companyPhoneEdit.Text())
-	cfg.PDF.CompanyFax = strings.TrimSpace(f.companyFaxEdit.Text())
-	cfg.PDF.CompanyEmail = strings.TrimSpace(f.companyEmailEdit.Text())
-	cfg.PDF.LogoPath = strings.TrimSpace(f.logoPathEdit.Text())
-	cfg.PDF.FooterHTML = strings.TrimSpace(f.footerEdit.Text())
-	cfg.PDF.ChromePath = strings.TrimSpace(f.chromePathEdit.Text())
-	cfg.PDF.SumatraPDFPath = strings.TrimSpace(f.sumatraPathEdit.Text())
-	cfg.PDF.PrintAfterOrder = f.printAfterOrderCheck.Checked()
-	cfg.PDF.PrinterName = strings.TrimSpace(f.printerNameEdit.Text())
-	cfg.PDF.EmailAfterOrder = f.emailAfterOrderCheck.Checked()
-
-	// SMTP config
-	cfg.SMTP.Host = strings.TrimSpace(f.smtpHostEdit.Text())
-	smtpPort, _ := strconv.Atoi(f.smtpPortEdit.Text())
-	if smtpPort <= 0 || smtpPort > 65535 {
-		smtpPort = 587
-	}
-	cfg.SMTP.Port = smtpPort
-	cfg.SMTP.User = strings.TrimSpace(f.smtpUserEdit.Text())
-	cfg.SMTP.FromAddress = strings.TrimSpace(f.smtpFromEdit.Text())
-	cfg.SMTP.UseTLS = f.smtpTLSCheck.Checked()
-
 	return cfg, f.passEdit.Text(), nil
 }
 
@@ -936,19 +613,6 @@ func persistConfig(cfg config.Config, password string, logSvc logger.LoggerServi
 		return fmt.Errorf("error saving config: %w", err)
 	}
 	return nil
-}
-
-// printPDFFile delegates to the print package.
-func printPDFFile(ctx context.Context, pdfPath, printerName, sumatraPDFPath string) error {
-	return pdfprint.PrintPDF(ctx, pdfPath, printerName, sumatraPDFPath)
-}
-
-// persistSMTPPassword saves the SMTP password to OS-level encrypted storage.
-func persistSMTPPassword(smtpPass string) error {
-	if smtpPass == "" {
-		return nil
-	}
-	return secrets.Set("smtp_password", []byte(smtpPass))
 }
 
 // ── Binary discovery ─────────────────────────────────────────────────────────
