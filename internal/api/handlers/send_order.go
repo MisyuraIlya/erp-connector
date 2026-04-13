@@ -129,16 +129,17 @@ func NewSendOrderHandler(queue *hasavshevet.OrderQueue) http.HandlerFunc {
 		}
 
 		orderReq := hasavshevet.OrderRequest{
-			DocumentType: req.DocumentType,
-			UserExtID:    req.UserExtID,
-			DueDate:      req.DueDate,
-			CreatedDate:  req.CreatedDate,
-			Comment:      req.Comment,
-			Discount:     *req.Discount,
-			HistoryID:    req.HistoryID,
-			Total:        *req.Total,
-			Currency:     req.Currency,
-			Details:      details,
+			DocumentType:  req.DocumentType,
+			UserExtID:     req.UserExtID,
+			DueDate:       req.DueDate,
+			CreatedDate:   req.CreatedDate,
+			Comment:       req.Comment,
+			Discount:      *req.Discount,
+			HistoryID:     req.HistoryID,
+			Total:         *req.Total,
+			Currency:      req.Currency,
+			CustomerEmail: req.CustomerEmail,
+			Details:       details,
 		}
 
 		lastOrderNumber, err := queue.Submit(orderReq)

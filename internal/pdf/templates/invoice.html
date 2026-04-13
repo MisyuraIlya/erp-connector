@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+<meta charset="utf-8"/>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 12mm 18mm 12mm;
+  }
+  @font-face {
+    font-family: 'Heebo';
+    src: url('{{.FontDataURI}}') format('truetype');
+  }
+  * {
+    box-sizing: border-box;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+  body {
+    direction: rtl;
+    font-family: 'Heebo', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #fafafa;
+    color: #333;
+  }
+  .container {
+    width: 100%;
+    max-width: none;
+    margin: 0 auto;
+    background: #fff;
+    padding: 12px 8px;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+  }
+  .company-info h2 {
+    margin: 0;
+    color: #2c3e50;
+    font-size: 20px;
+  }
+  .company-info p,
+  .info-block div {
+    margin: 5px 0;
+    font-size: 14px;
+  }
+  .logo img {
+    max-width: 150px;
+  }
+  .document-title h1 {
+    text-align: center;
+    color: #2c3e50;
+    font-size: 24px;
+    margin: 20px 0;
+  }
+  .info-block {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .items-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: auto;
+    margin-bottom: 20px;
+  }
+  .items-table col.col-index { width: 5%; }
+  .items-table col.col-sku { width: 20%; }
+  .items-table col.col-title { width: 35%; }
+  .items-table col.col-qty { width: 8%; }
+  .items-table col.col-unit { width: 10%; }
+  .items-table col.col-discount { width: 8%; }
+  .items-table col.col-total { width: 14%; }
+  .items-table th,
+  .items-table td {
+    border: 1px solid #ddd;
+    padding: 6px;
+    text-align: center;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+  }
+  .items-table th {
+    background: #f0f0f0;
+    font-weight: bold;
+  }
+  .items-table td.item-title {
+    text-align: right;
+    line-height: 1.35;
+  }
+  .items-table td:nth-child(2) {
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+  .items-table td:nth-child(1),
+  .items-table td:nth-child(4),
+  .items-table td:nth-child(5),
+  .items-table td:nth-child(6),
+  .items-table td:nth-child(7) {
+    white-space: nowrap;
+  }
+  .items-table tr:nth-child(even) {
+    background: #fafafa;
+  }
+  .totals {
+    text-align: right;
+    font-size: 16px;
+    margin-bottom: 30px;
+  }
+  .totals .line {
+    margin: 8px 0;
+  }
+  .totals .label {
+    font-weight: bold;
+    margin-right: 10px;
+  }
+  .footer {
+    text-align: center;
+    font-size: 12px;
+    color: #777;
+    border-top: 1px solid #e0e0e0;
+    padding-top: 10px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="company-info">
+      {{if .CompanyName}}<h2>{{.CompanyName}}</h2>{{end}}
+      <p>
+        {{if .CompanyAddress}}{{.CompanyAddress}}<br>{{end}}
+        {{if .CompanyPhone}}&#x05D8;&#x05DC;&#x05E4;&#x05D5;&#x05DF;: {{.CompanyPhone}}{{end}}
+        {{if and .CompanyPhone .CompanyFax}}<br>{{end}}
+        {{if .CompanyFax}}&#x05E4;&#x05E7;&#x05E1;: {{.CompanyFax}}{{end}}
+        {{if and (or .CompanyPhone .CompanyFax) .CompanyEmail}}<br>{{end}}
+        {{if .CompanyEmail}}&#x05D0;&#x05D9;&#x05DE;&#x05D9;&#x05D9;&#x05DC;: {{.CompanyEmail}}{{end}}
+      </p>
+    </div>
+    {{if .LogoDataURI}}<div class="logo"><img src="{{.LogoDataURI}}" alt="Logo" /></div>{{end}}
+  </div>
+
+  <div class="document-title">
+    <h1>&#x05DE;&#x05E1;&#x05DE;&#x05DA; &#x05DE;&#x05E1;&#x05E4;&#x05E8; {{.DocumentNumber}}</h1>
+  </div>
+
+  <div class="info-block">
+    <div>
+      <strong>&#x05DC;&#x05DB;&#x05D1;&#x05D5;&#x05D3;:</strong><br>
+      {{.CustomerCompany}} {{.CustomerName}}<br>
+      &#x05D8;&#x05DC;&#x05E4;&#x05D5;&#x05DF;: {{.CustomerPhone}}
+    </div>
+    <div>
+      <strong>&#x05DE;&#x05E1;&#x05DE;&#x05DA;:</strong> {{.DocumentNumber}}<br>
+      <strong>&#x05EA;&#x05D0;&#x05E8;&#x05D9;&#x05DA;:</strong> {{.Date}}
+    </div>
+  </div>
+
+  <table class="items-table">
+    <colgroup>
+      <col class="col-index" />
+      <col class="col-sku" />
+      <col class="col-title" />
+      <col class="col-qty" />
+      <col class="col-unit" />
+      <col class="col-discount" />
+      <col class="col-total" />
+    </colgroup>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>&#x05DE;&#x05E7;"&#x05D8;</th>
+        <th>&#x05EA;&#x05D9;&#x05D0;&#x05D5;&#x05E8;</th>
+        <th>&#x05DB;&#x05DE;&#x05D5;&#x05EA;</th>
+        <th>&#x05DE;&#x05D7;&#x05D9;&#x05E8; &#x05D9;&#x05D7;&#x05D9;&#x05D3;&#x05D4;</th>
+        <th>&#x05D4;&#x05E0;&#x05D7;&#x05D4;</th>
+        <th>&#x05E1;&#x05D4;"&#x05DB;</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Items}}
+      <tr>
+        <td>{{.Index}}</td>
+        <td>{{if .SKU}}{{.SKU}}{{else}}-{{end}}</td>
+        <td class="item-title">{{if .Title}}{{.Title}}{{else}}-{{end}}</td>
+        <td>{{if .Quantity}}{{.Quantity}}{{else}}-{{end}}</td>
+        <td>{{.UnitPrice}}&#8362;</td>
+        <td>{{if .DiscountPct}}{{.DiscountPct}}%{{else}}-{{end}}</td>
+        <td style="padding-left:10px;">{{.Total}}&#8362;</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="line"><span class="label">&#x05D4;&#x05E2;&#x05E8;&#x05D4; &#x05DB;&#x05DC;&#x05DC;&#x05D9;&#x05EA;:</span> {{.Comment}}</div>
+    <div class="line"><span class="label">&#x05E1;&#x05D4;"&#x05DB; &#x05DC;&#x05E4;&#x05E0;&#x05D9; &#x05D4;&#x05E0;&#x05D7;&#x05D4;:</span> {{.TotalBeforeDiscount}}&#8362;</div>
+    <div class="line"><span class="label">&#x05D4;&#x05E0;&#x05D7;&#x05D4; &#x05DB;&#x05DC;&#x05DC;&#x05D9;&#x05EA;:</span> {{.DiscountPercent}}%</div>
+    <div class="line"><span class="label">&#x05E1;&#x05D4;"&#x05DB; &#x05DC;&#x05D0;&#x05D7;&#x05E8; &#x05D4;&#x05E0;&#x05D7;&#x05D4;:</span> {{.TotalAfterDiscount}}&#8362;</div>
+    <div class="line"><span class="label">&#x05DE;&#x05E2;"&#x05DE; ({{.TaxPercent}}%):</span> {{.TaxAmount}}&#8362;</div>
+    <div class="line"><span class="label">&#x05E1;&#x05D4;"&#x05DB; &#x05DC;&#x05EA;&#x05E9;&#x05DC;&#x05D5;&#x05DD;:</span> {{.TotalDue}}&#8362;</div>
+  </div>
+
+  <div class="footer">
+    {{if .FooterHTML}}{{.FooterHTML}}{{else}}&#x05EA;&#x05D5;&#x05D3;&#x05D4; &#x05E9;&#x05D1;&#x05D7;&#x05E8;&#x05EA;&#x05DD; &#x05D1;{{.CompanyName}}! &#x05D0;&#x05E0;&#x05D5; &#x05E9;&#x05DE;&#x05D7;&#x05D9;&#x05DD; &#x05DC;&#x05E9;&#x05E8;&#x05EA; &#x05D0;&#x05EA;&#x05DB;&#x05DD;.{{end}}
+  </div>
+
+</div>
+</body>
+</html>

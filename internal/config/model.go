@@ -21,6 +21,34 @@ type DBConfig struct {
 	Database string   `yaml:"database"`
 }
 
+// PDFConfig holds company branding for PDF generation and print/email toggles.
+type PDFConfig struct {
+	CompanyName    string `yaml:"companyName"`
+	CompanyAddress string `yaml:"companyAddress"`
+	CompanyPhone   string `yaml:"companyPhone"`
+	CompanyFax     string `yaml:"companyFax"`
+	CompanyEmail   string `yaml:"companyEmail"`
+	LogoPath       string `yaml:"logoPath"`  // local file path to logo image
+	FooterHTML     string `yaml:"footerHTML"` // HTML footer text
+
+	PrintAfterOrder bool   `yaml:"printAfterOrder"`
+	PrinterName     string `yaml:"printerName"`    // empty = system default
+	EmailAfterOrder bool   `yaml:"emailAfterOrder"`
+
+	ChromePath     string `yaml:"chromePath"`     // auto-detected if empty
+	SumatraPDFPath string `yaml:"sumatraPdfPath"` // auto-detected if empty
+}
+
+// SMTPConfig holds SMTP server settings for sending invoice emails.
+// Password is stored separately in secrets/ (never in YAML).
+type SMTPConfig struct {
+	Host        string `yaml:"host"`
+	Port        int    `yaml:"port"` // default: 587
+	User        string `yaml:"user"`
+	FromAddress string `yaml:"fromAddress"`
+	UseTLS      bool   `yaml:"useTLS"` // default: true
+}
+
 type Config struct {
 	ERP          ERPType  `yaml:"erp"`
 	APIListen    string   `yaml:"apiListen"`
@@ -41,8 +69,10 @@ type Config struct {
 	// each order's IMOVEIN files are written. Takes precedence over HasExePath.
 	// The BAT is executed from its own directory so relative paths inside it
 	// (e.g. -p"digi.bat") resolve correctly.
-	HasBatFile string `yaml:"hasBatFile"`
-	DB           DBConfig `yaml:"db"`
+	HasBatFile string    `yaml:"hasBatFile"`
+	DB         DBConfig  `yaml:"db"`
+	PDF        PDFConfig `yaml:"pdf"`
+	SMTP       SMTPConfig `yaml:"smtp"`
 }
 
 func ErpValues() []ERPType {
@@ -88,6 +118,14 @@ func Default() Config {
 			Port:     1433,
 			Database: "",
 			User:     "",
+		},
+		PDF: PDFConfig{
+			PrintAfterOrder: false,
+			EmailAfterOrder: false,
+		},
+		SMTP: SMTPConfig{
+			Port:   587,
+			UseTLS: true,
 		},
 	}
 }

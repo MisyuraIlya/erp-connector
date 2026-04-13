@@ -11,8 +11,10 @@ import (
 	"erp-connector/internal/api"
 	"erp-connector/internal/config"
 	"erp-connector/internal/db"
+	"erp-connector/internal/email"
 	"erp-connector/internal/erp/hasavshevet"
 	"erp-connector/internal/logger"
+	"erp-connector/internal/pdf"
 	"erp-connector/internal/platform/autostart"
 	"erp-connector/internal/secrets"
 )
@@ -72,7 +74,35 @@ func (a *serverApp) Start() error {
 	numStorePath := filepath.Join(cfg.SendOrderDir, "lastOrderNumber.json")
 	numStore := hasavshevet.NewOrderNumberStore(numStorePath)
 	sender := hasavshevet.NewSender(dbConn, cfg, numStore, logSvc)
-	queue := hasavshevet.NewOrderQueue(sender, logSvc)
+
+	// Set up post-order hooks (PDF generation, printing, email).
+	var postHooks []hasavshevet.PostOrderHook
+	if cfg.PDF.PrintAfterOrder || cfg.PDF.EmailAfterOrder {
+		chromePath := cfg.PDF.ChromePath
+		if chromePath == "" {
+			chromePath = pdf.DetectChrome()
+		}
+		if chromePath == "" {
+			logSvc.Warn("Chrome not found; PDF generation after order will be skipped")
+		} else {
+			pdfGen := pdf.NewGenerator(chromePath)
+
+			var emailSender *email.Sender
+			if cfg.PDF.EmailAfterOrder && cfg.SMTP.Host != "" {
+				smtpPass, _ := secrets.Get("smtp_password")
+				emailSender = email.NewSender(cfg.SMTP, string(smtpPass))
+				logSvc.Info("email after order enabled")
+			}
+
+			postHooks = append(postHooks, hasavshevet.NewPDFPostOrderHook(
+				cfg, pdfGen, emailSender, logSvc,
+			))
+			logSvc.Info(fmt.Sprintf("PDF post-order hook enabled (print=%v, email=%v, chrome=%s)",
+				cfg.PDF.PrintAfterOrder, cfg.PDF.EmailAfterOrder, chromePath))
+		}
+	}
+
+	queue := hasavshevet.NewOrderQueue(sender, logSvc, postHooks...)
 	queueCtx, queueCancel := context.WithCancel(context.Background())
 	queue.Start(queueCtx)
 	a.orderQueue = queue

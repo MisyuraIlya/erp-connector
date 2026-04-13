@@ -18,16 +18,17 @@ import (
 // translated from the API DTO before enqueueing.
 // DBName is not part of the request; the Sender resolves it from config.
 type OrderRequest struct {
-	DocumentType string
-	UserExtID    string
-	DueDate      string
-	CreatedDate  string
-	Comment      string
-	Discount     float64
-	HistoryID    string
-	Total        float64
-	Currency     string
-	Details      []OrderLineItem
+	DocumentType  string
+	UserExtID     string
+	DueDate       string
+	CreatedDate   string
+	Comment       string
+	Discount      float64
+	HistoryID     string
+	Total         float64
+	Currency      string
+	CustomerEmail string // optional; used for PDF email delivery
+	Details       []OrderLineItem
 }
 
 // OrderLineItem is one line item in an order.
@@ -45,6 +46,17 @@ type OrderLineItem struct {
 type OrderResult struct {
 	OrderNumber  int64
 	WrittenFiles []string
+	Account      AccountInfo
+}
+
+// AccountInfo holds customer data needed for PDF generation.
+// Exported mirror of the internal accountInfo queried from the DB.
+type AccountInfo struct {
+	AccountKey string
+	FullName   string
+	Address    string
+	City       string
+	Phone      string
 }
 
 // accountInfo holds the DB columns needed from the Accounts table.
@@ -202,7 +214,17 @@ func (s *Sender) processOrderWithNumber(ctx context.Context, req OrderRequest, o
 	}
 
 	s.log.Success(fmt.Sprintf("order complete orderNumber=%d files=%v", orderNum, writtenFiles))
-	return &OrderResult{OrderNumber: orderNum, WrittenFiles: writtenFiles}, nil
+	return &OrderResult{
+		OrderNumber:  orderNum,
+		WrittenFiles: writtenFiles,
+		Account: AccountInfo{
+			AccountKey: account.AccountKey,
+			FullName:   account.FullName,
+			Address:    account.Address,
+			City:       account.City,
+			Phone:      account.Phone,
+		},
+	}, nil
 }
 
 // buildIMOVEIN maps a validated OrderRequest to the stockHeader + []stockMove

@@ -13,8 +13,9 @@ type SendOrderRequest struct {
 	Discount     *float64            `json:"discount"`
 	HistoryID    string              `json:"historyId"`
 	Total        *float64            `json:"total"`
-	Currency     string              `json:"currency"`
-	Details      []SendOrderLineItem `json:"details"`
+	Currency      string              `json:"currency"`
+	CustomerEmail string              `json:"customerEmail"` // optional; for PDF email delivery
+	Details       []SendOrderLineItem `json:"details"`
 }
 
 type SendOrderLineItem struct {
