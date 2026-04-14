@@ -7,6 +7,8 @@ import (
 	"html/template"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/chromedp/chromedp"
 	"github.com/chromedp/cdproto/page"
@@ -30,7 +32,30 @@ func (g *Generator) Generate(ctx context.Context, data InvoiceData) ([]byte, err
 		return nil, fmt.Errorf("render html: %w", err)
 	}
 
-	dataURI := "data:text/html;base64," + base64.StdEncoding.EncodeToString([]byte(htmlStr))
+	// Write HTML to a temp file and load via file:// URL.
+	// Navigating to a data:text/html URI gives the page an opaque/null origin,
+	// which causes Chrome to block embedded data: images from rendering in PDFs.
+	tmpFile, err := os.CreateTemp("", "erp_invoice_*.html")
+	if err != nil {
+		return nil, fmt.Errorf("create temp html: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(htmlStr); err != nil {
+		tmpFile.Close()
+		return nil, fmt.Errorf("write temp html: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		return nil, fmt.Errorf("close temp html: %w", err)
+	}
+
+	// Build a valid file:// URL on both Windows and Unix.
+	slashPath := filepath.ToSlash(tmpPath)
+	if !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath // Windows: C:/foo → /C:/foo
+	}
+	fileURL := "file://" + slashPath
 
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
@@ -49,7 +74,7 @@ func (g *Generator) Generate(ctx context.Context, data InvoiceData) ([]byte, err
 
 	var pdfBuf []byte
 	if err := chromedp.Run(taskCtx,
-		chromedp.Navigate(dataURI),
+		chromedp.Navigate(fileURL),
 		chromedp.ActionFunc(func(ctx context.Context) error {
 			buf, _, err := page.PrintToPDF().
 				WithPaperWidth(8.27).   // A4 width in inches
