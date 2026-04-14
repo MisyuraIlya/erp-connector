@@ -157,24 +157,28 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 								dlg.Synchronize(func() { setStatus("Chrome not found; cannot generate PDF") })
 								return
 							}
+
+							// ── Logo diagnostic (shown in status bar + log) ──────────
+							logoPath := strings.TrimSpace(logoPathEdit.Text())
+							var logoDiag string
+							if logoPath == "" {
+								logoDiag = "logo: not set"
+								logSvc.Info("test-print: logo path is empty")
+							} else {
+								if logoData, readErr := os.ReadFile(logoPath); readErr != nil {
+									logoDiag = "logo ERROR: " + readErr.Error()
+									logSvc.Warn("test-print: logo read error: " + readErr.Error())
+								} else {
+									mimeType := http.DetectContentType(logoData)
+									logoDiag = fmt.Sprintf("logo OK: %s (%d B)", mimeType, len(logoData))
+									logSvc.Info(fmt.Sprintf("test-print: logo OK path=%s size=%d mime=%s", logoPath, len(logoData), mimeType))
+								}
+							}
+							dlg.Synchronize(func() { setStatus(logoDiag + " | generating PDF...") })
+
 							ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 							defer cancel()
 							gen := pdf.NewGenerator(chromePath)
-
-							// Diagnose logo loading before handing off to GenerateSample.
-							logoPath := strings.TrimSpace(logoPathEdit.Text())
-							if logoPath == "" {
-								logSvc.Info("test-print: logo path is empty — no logo will appear")
-							} else {
-								if logoData, readErr := os.ReadFile(logoPath); readErr != nil {
-									logSvc.Warn("test-print: cannot read logo file: " + readErr.Error())
-									dlg.Synchronize(func() { setStatus("Logo warning: " + readErr.Error()) })
-								} else {
-									mimeType := http.DetectContentType(logoData)
-									logSvc.Info(fmt.Sprintf("test-print: logo OK — path=%s size=%d mime=%s", logoPath, len(logoData), mimeType))
-								}
-							}
-
 							pdfBytes, err := gen.GenerateSample(ctx,
 								strings.TrimSpace(companyNameEdit.Text()),
 								strings.TrimSpace(companyAddressEdit.Text()),
@@ -215,9 +219,9 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 									saved = " | Saved: " + savedPath
 								}
 								if printErr != nil {
-									setStatus("Print failed: " + printErr.Error() + saved)
+									setStatus("Print failed: " + printErr.Error() + " | " + logoDiag + saved)
 								} else {
-									setStatus("Test print sent to printer successfully." + saved)
+									setStatus("Print OK | " + logoDiag + saved)
 								}
 							})
 						}()
