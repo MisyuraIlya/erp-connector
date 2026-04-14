@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -43,7 +44,8 @@ func (h *PDFPostOrderHook) AfterOrder(ctx context.Context, req OrderRequest, res
 	var logoDataURI string
 	if h.cfg.PDF.LogoPath != "" {
 		if data, err := os.ReadFile(h.cfg.PDF.LogoPath); err == nil {
-			logoDataURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(data)
+			mimeType := http.DetectContentType(data)
+			logoDataURI = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
 		} else {
 			h.log.Warn(fmt.Sprintf("failed to read logo file %s: %v", h.cfg.PDF.LogoPath, err))
 		}

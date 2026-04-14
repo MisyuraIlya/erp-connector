@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"html/template"
+	"net/http"
 	"os"
 
 	"github.com/chromedp/chromedp"
@@ -77,7 +78,8 @@ func (g *Generator) GenerateSample(ctx context.Context, companyName, companyAddr
 	var logoDataURI string
 	if logoPath != "" {
 		if data, err := os.ReadFile(logoPath); err == nil {
-			logoDataURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(data)
+			mimeType := http.DetectContentType(data)
+			logoDataURI = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
 		}
 	}
 
