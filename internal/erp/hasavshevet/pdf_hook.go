@@ -42,12 +42,15 @@ func (h *PDFPostOrderHook) AfterOrder(ctx context.Context, req OrderRequest, res
 
 	// Load logo as base64 data URI if configured
 	var logoDataURI string
-	if h.cfg.PDF.LogoPath != "" {
+	if h.cfg.PDF.LogoPath == "" {
+		h.log.Info("logo path not configured — PDF will have no logo")
+	} else {
 		if data, err := os.ReadFile(h.cfg.PDF.LogoPath); err == nil {
 			mimeType := http.DetectContentType(data)
 			logoDataURI = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
+			h.log.Info(fmt.Sprintf("logo loaded: path=%s size=%d mime=%s", h.cfg.PDF.LogoPath, len(data), mimeType))
 		} else {
-			h.log.Warn(fmt.Sprintf("failed to read logo file %s: %v", h.cfg.PDF.LogoPath, err))
+			h.log.Warn(fmt.Sprintf("cannot read logo file: path=%s err=%v", h.cfg.PDF.LogoPath, err))
 		}
 	}
 

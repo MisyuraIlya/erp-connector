@@ -4,6 +4,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -158,13 +160,28 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 							ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 							defer cancel()
 							gen := pdf.NewGenerator(chromePath)
+
+							// Diagnose logo loading before handing off to GenerateSample.
+							logoPath := strings.TrimSpace(logoPathEdit.Text())
+							if logoPath == "" {
+								logSvc.Info("test-print: logo path is empty — no logo will appear")
+							} else {
+								if logoData, readErr := os.ReadFile(logoPath); readErr != nil {
+									logSvc.Warn("test-print: cannot read logo file: " + readErr.Error())
+									dlg.Synchronize(func() { setStatus("Logo warning: " + readErr.Error()) })
+								} else {
+									mimeType := http.DetectContentType(logoData)
+									logSvc.Info(fmt.Sprintf("test-print: logo OK — path=%s size=%d mime=%s", logoPath, len(logoData), mimeType))
+								}
+							}
+
 							pdfBytes, err := gen.GenerateSample(ctx,
 								strings.TrimSpace(companyNameEdit.Text()),
 								strings.TrimSpace(companyAddressEdit.Text()),
 								strings.TrimSpace(companyPhoneEdit.Text()),
 								strings.TrimSpace(companyFaxEdit.Text()),
 								strings.TrimSpace(companyEmailEdit.Text()),
-								strings.TrimSpace(logoPathEdit.Text()),
+								logoPath,
 								strings.TrimSpace(footerEdit.Text()),
 							)
 							if err != nil {
