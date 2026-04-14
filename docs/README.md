@@ -18,7 +18,9 @@ The GUI uses **walk** (native Win32 controls) and runs on Windows without any GP
 4. `api.md` – endpoints and payload contracts
 5. `config.md` – config schema and persistence rules
 6. `autostart.md` – Windows Service / systemd / launchd
-7. `gui-migration.md` – why Fyne was replaced with walk (history/context)
+7. `hasavshevet-send-order.md` – send-order queue, IMOVEIN format, runbook
+8. `pdf-email.md` – PDF generation, auto-print, email, Test Print, known pitfalls
+9. `gui-migration.md` – why Fyne was replaced with walk (history/context)
 
 ## Non-goals
 

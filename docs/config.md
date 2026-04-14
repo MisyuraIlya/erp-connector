@@ -1,26 +1,48 @@
 # Configuration
 
 ## Config file location
-- Windows: `%AppData%\\erp-connector\\config.yaml`
-- Linux: `~/.config/erp-connector/config.yaml`
-- macOS: `~/Library/Application Support/erp-connector/config.yaml`
+- Windows: `%PROGRAMDATA%\erp-connector\config.yaml`
+- Linux: `/etc/erp-connector/config.yaml`
 
 ## Current schema (implemented)
 
 ```yaml
-erp: "hasavshevet" # or "sap"
+erp: "hasavshevet"           # or "sap" / "priority"
 apiListen: "127.0.0.1:8080"
 debug: false
 bearerToken: "CHANGE_ME"
+erpUser: ""
 imageFolders:
-  - "P:\\images"
-sendOrderDir: "P:\\send-orders" # required only when erp=hasavshevet
+  - 'P:\images'
+sendOrderDir: 'P:\send-orders'  # required only when erp=hasavshevet
+hasBatFile:   'C:\Hash7\digi.bat'
 db:
   driver: "mssql"
   host: "localhost"
   port: 1433
   user: "sa"
   database: "ERPDB"
+  # DB password stored in OS secrets (Windows DPAPI), not here
+pdf:
+  companyName:     "My Company Ltd."
+  companyAddress:  "123 Main St, Tel Aviv"
+  companyPhone:    "03-1234567"
+  companyFax:      "03-7654321"
+  companyEmail:    "office@mycompany.co.il"
+  logoPath:        'C:\images\logo.png'  # PNG/JPEG/GIF/WebP/BMP
+  footerHTML:      ""
+  chromePath:      ""          # auto-detected if empty
+  sumatraPdfPath:  ""          # auto-detected if empty
+  printAfterOrder: false
+  printerName:     ""          # empty = Windows default printer
+  emailAfterOrder: false
+smtp:
+  host:        "smtp.gmail.com"
+  port:        587
+  user:        "me@gmail.com"
+  fromAddress: "me@gmail.com"
+  useTLS:      true
+  # SMTP password stored in OS secrets (Windows DPAPI), not here
 ```
 
 ## Config schema (recommended)

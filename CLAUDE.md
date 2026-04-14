@@ -26,6 +26,7 @@ cmd/
   erp-connector/       ← Windows GUI (walk library)
     main.go            ← Win32 form, config UI, service control buttons
     helpers.go         ← UI helper functions
+    pdf_settings.go    ← PDF & Email Settings dialog (branding, print, SMTP, Test Print)
     ui_guard_windows.go
     ui_log.go
   erp-connectord/      ← Background daemon/service
@@ -68,15 +69,28 @@ internal/
       order_number.go  ← OrderNumberStore (JSON file + mutex)
       exec_windows.go  ← Windows: has.exe execution
       exec_stub.go     ← Non-Windows stub
+      pdf_hook.go      ← PDFPostOrderHook: generate + print + email after order
     sap/
       price_stock.go   ← NOT IMPLEMENTED (returns ErrNotImplemented)
   files/
     files.go           ← Path traversal prevention + ListFiles
     files_test.go
   logger/logger.go     ← LoggerService interface (Info, Error, Warn, Success, Close)
+  pdf/
+    generator.go       ← headless-Chrome PDF generator (file:// temp HTML approach)
+    template.go        ← InvoiceData struct + renderInvoiceHTML
+    assets.go          ← embedded invoice.html template + NotoSansHebrew font
+    chrome.go          ← Chrome auto-detection
+    templates/
+      invoice.html     ← RTL Hebrew invoice template
+  print/
+    printer_windows.go ← SumatraPDF silent-print wrapper
+    printer_stub.go    ← Non-Windows stub
+  email/
+    sender.go          ← SMTP sender (invoice PDF attachment + test email)
   platform/
     autostart/         ← Windows service + Linux systemd registration
-    paths/             ← OS-specific config/log file paths
+    paths/             ← OS-specific config/log/data file paths (DataDir added)
   secrets/             ← OS-level encrypted storage (Windows DPAPI, Unix keyring)
 ```
 
@@ -230,3 +244,8 @@ go build -o erp-connector.exe ./cmd/erp-connector
 ### Security
 - ❌ Logging the bearer token, DB password, or any user credential in any log output
 - ❌ Returning raw `error.Error()` strings from DB to API clients — use generic error messages with error codes
+
+### PDF generation
+- ❌ Using `data:text/html;base64,...` as the Chrome navigation URL — Chrome treats this as opaque/null origin and blocks embedded `data:` images from rendering in PDFs. Always write HTML to a temp file and navigate via `file://`
+- ❌ Typing `LogoDataURI` (or any `data:` URI in an HTML template attribute) as `string` — Go's `html/template` silently replaces `data:` URIs with `#ZgotmplZ`. Must be `template.URL`
+- ❌ Hardcoding `"image/png"` as MIME type for logo — use `http.DetectContentType(data)` to detect from file content
