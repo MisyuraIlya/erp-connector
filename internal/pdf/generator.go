@@ -114,7 +114,7 @@ func (g *Generator) GenerateSample(ctx context.Context, companyName, companyAddr
 		CompanyPhone:   companyPhone,
 		CompanyFax:     companyFax,
 		CompanyEmail:   companyEmail,
-		LogoDataURI:    logoDataURI,
+		LogoDataURI:    template.URL(logoDataURI),
 		FooterHTML:     template.HTML(footerHTML),
 		DocumentNumber: "12345",
 		Date:           "13/04/2026",

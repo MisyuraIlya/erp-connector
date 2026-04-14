@@ -14,7 +14,7 @@ type InvoiceData struct {
 	CompanyPhone   string
 	CompanyFax     string
 	CompanyEmail   string
-	LogoDataURI    string // base64 data URI or empty
+	LogoDataURI    template.URL // base64 data URI or empty
 	FooterHTML     template.HTML
 
 	// Font

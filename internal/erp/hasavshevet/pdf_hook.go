@@ -61,7 +61,7 @@ func (h *PDFPostOrderHook) AfterOrder(ctx context.Context, req OrderRequest, res
 		CompanyPhone:   h.cfg.PDF.CompanyPhone,
 		CompanyFax:     h.cfg.PDF.CompanyFax,
 		CompanyEmail:   h.cfg.PDF.CompanyEmail,
-		LogoDataURI:    logoDataURI,
+		LogoDataURI:    template.URL(logoDataURI),
 		FooterHTML:     template.HTML(h.cfg.PDF.FooterHTML),
 		DocumentNumber: orderNum,
 		Date:           formatDate(req.CreatedDate),
