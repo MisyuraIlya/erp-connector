@@ -29,6 +29,8 @@ import (
 
 const connectordWindowsServiceName = "erp-connectord"
 
+const documentationURL = "https://drive.google.com/file/d/1wWlVuB6Gyab6_SGN11e3TIl-14JVQ2Zz/view?usp=sharing"
+
 // mainForm holds all widget references and application state.
 type mainForm struct {
 	*walk.MainWindow
@@ -176,6 +178,7 @@ func newMainForm(cfg config.Config, logSvc logger.LoggerService) (*mainForm, err
 							PushButton{Text: "שמירה", OnClicked: f.onSave},
 							PushButton{Text: "Start server", OnClicked: f.onStartServer},
 							PushButton{Text: "Stop server", OnClicked: f.onStopServer},
+							PushButton{Text: "Documentation", OnClicked: f.onDocumentation},
 						},
 					},
 					Label{AssignTo: &f.statusLabel},
@@ -320,6 +323,12 @@ func (f *mainForm) onBrowseHasBat() {
 
 func (f *mainForm) onOpenPDFSettings() {
 	showPDFSettingsDialog(f.MainWindow, &f.cfg, f.logSvc)
+}
+
+func (f *mainForm) onDocumentation() {
+	if err := exec.Command("cmd", "/c", "start", documentationURL).Start(); err != nil {
+		f.setStatus("Failed to open documentation: " + err.Error())
+	}
 }
 
 func (f *mainForm) onTestUser() {
