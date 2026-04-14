@@ -18,6 +18,7 @@ import (
 	"erp-connector/internal/logger"
 	"erp-connector/internal/pdf"
 	pdfprint "erp-connector/internal/print"
+	"erp-connector/internal/platform/paths"
 	"erp-connector/internal/secrets"
 )
 
@@ -170,6 +171,18 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 								dlg.Synchronize(func() { setStatus("PDF generation failed: " + err.Error()) })
 								return
 							}
+
+							// Save a copy to ProgramData so the PDF can be inspected during development.
+							var savedPath string
+							dataDir := paths.DataDir()
+							if mkErr := os.MkdirAll(dataDir, 0o755); mkErr == nil {
+								saveName := "test_print_" + time.Now().Format("20060102_150405") + ".pdf"
+								candidate := filepath.Join(dataDir, saveName)
+								if writeErr := os.WriteFile(candidate, pdfBytes, 0o644); writeErr == nil {
+									savedPath = candidate
+								}
+							}
+
 							tmpFile := filepath.Join(os.TempDir(), "erp_connector_test_print.pdf")
 							if err := os.WriteFile(tmpFile, pdfBytes, 0o644); err != nil {
 								dlg.Synchronize(func() { setStatus("Failed to write temp PDF: " + err.Error()) })
@@ -180,10 +193,14 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 								strings.TrimSpace(printerNameEdit.Text()),
 								strings.TrimSpace(sumatraPathEdit.Text()))
 							dlg.Synchronize(func() {
+								saved := ""
+								if savedPath != "" {
+									saved = " | Saved: " + savedPath
+								}
 								if printErr != nil {
-									setStatus("Print failed: " + printErr.Error())
+									setStatus("Print failed: " + printErr.Error() + saved)
 								} else {
-									setStatus("Test print sent to printer successfully.")
+									setStatus("Test print sent to printer successfully." + saved)
 								}
 							})
 						}()

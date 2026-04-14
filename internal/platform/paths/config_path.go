@@ -23,3 +23,18 @@ func ConfigFilePath() (string, error) {
 		return "", errors.New("unsupported OS for machine-wide config")
 	}
 }
+
+// DataDir returns the application data directory where config, logs, and
+// generated files (e.g. test PDFs) are stored.
+func DataDir() string {
+	switch runtime.GOOS {
+	case "windows":
+		programData := os.Getenv("PROGRAMDATA")
+		if programData == "" {
+			programData = `C:\ProgramData`
+		}
+		return filepath.Join(programData, AppName)
+	default:
+		return filepath.Join("/etc", AppName)
+	}
+}
