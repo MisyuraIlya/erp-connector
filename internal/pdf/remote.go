@@ -23,6 +23,13 @@ type RemoteFetcher struct {
 // origin without any /api suffix (e.g. "https://api.example.com"); the
 // /api/pdf-template/... path is appended internally. timeout=0 falls back to
 // 15s. userAgent identifies this connector instance for backend logging.
+//
+// Operators sometimes paste the full URL shown in the admin's "Generate token"
+// dialog (which contains placeholders like `?documentNumber={documentNumber}`)
+// into the BaseURL field. Without normalization the connector would append
+// its own path+query, producing a URL with two `?` segments where Express
+// reads `documentNumber={documentNumber}` literally and returns 404. Strip
+// any path/query/fragment to scheme+host only.
 func NewRemoteFetcher(baseURL string, timeout time.Duration, userAgent string) *RemoteFetcher {
 	if timeout <= 0 {
 		timeout = 15 * time.Second
@@ -32,9 +39,30 @@ func NewRemoteFetcher(baseURL string, timeout time.Duration, userAgent string) *
 	}
 	return &RemoteFetcher{
 		client:    &http.Client{Timeout: timeout},
-		baseURL:   strings.TrimRight(baseURL, "/"),
+		baseURL:   normalizeBaseURL(baseURL),
 		userAgent: userAgent,
 	}
+}
+
+// normalizeBaseURL reduces the operator-supplied value to scheme+host. Adds
+// `https://` if no scheme is present. Returns "" for empty/malformed input.
+func normalizeBaseURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return strings.TrimRight(raw, "/")
+	}
+	scheme := u.Scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	return scheme + "://" + u.Host
 }
 
 // Fetch returns the HTML bytes for the given (token, documentType, documentNumber, userExtId).

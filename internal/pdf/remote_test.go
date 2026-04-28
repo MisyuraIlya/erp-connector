@@ -109,6 +109,44 @@ func TestRemoteFetcher_EmptyToken(t *testing.T) {
 	}
 }
 
+func TestNormalizeBaseURL(t *testing.T) {
+	cases := map[string]string{
+		"":                                            "",
+		"   ":                                         "",
+		"https://api.example.com":                     "https://api.example.com",
+		"https://api.example.com/":                    "https://api.example.com",
+		"https://api.example.com/api":                 "https://api.example.com",
+		"https://api.example.com/api/pdf-template/connector/render/abc123?documentNumber={documentNumber}&userExtId={userExtId}": "https://api.example.com",
+		"http://localhost:4000":                       "http://localhost:4000",
+		"localhost:4000":                              "https://localhost:4000",
+		"api.example.com":                             "https://api.example.com",
+		"https://cpadmin.maorders.co.il/api/pdf-template/connector/render/61c0...?documentNumber={documentNumber}&userExtId={userExtId}": "https://cpadmin.maorders.co.il",
+	}
+	for in, want := range cases {
+		got := normalizeBaseURL(in)
+		if got != want {
+			t.Errorf("normalizeBaseURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestRemoteFetcher_NormalizesBaseURLOnConstruct(t *testing.T) {
+	// Smoke-test: construction does not panic when the operator pastes a URL
+	// containing path + literal placeholders. Real network call is covered by
+	// TestRemoteFetcher_HappyPath which uses an httptest server.
+	rf := NewRemoteFetcher(
+		"https://example.com/api/pdf-template/connector/render/abc?documentNumber={documentNumber}&userExtId={userExtId}",
+		1*time.Second,
+		"erp-connector/test",
+	)
+	if rf == nil {
+		t.Fatalf("expected non-nil fetcher")
+	}
+	if rf.baseURL != "https://example.com" {
+		t.Fatalf("baseURL not normalized: got %q", rf.baseURL)
+	}
+}
+
 func TestMaskToken(t *testing.T) {
 	cases := map[string]string{
 		"":                   "",
