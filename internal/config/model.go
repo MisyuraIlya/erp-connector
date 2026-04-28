@@ -37,6 +37,15 @@ type PDFConfig struct {
 
 	ChromePath     string `yaml:"chromePath"`     // auto-detected if empty
 	SumatraPDFPath string `yaml:"sumatraPdfPath"` // auto-detected if empty
+
+	// Remote template (mission 022): when enabled, the connector fetches a
+	// pre-rendered HTML document from the backend instead of rendering its own
+	// invoice template locally. The chromedp HTML→PDF pipeline is unchanged.
+	RemoteTemplateBaseURL string            `yaml:"remoteTemplateBaseURL"`           // e.g. "https://api.example.com" — no path/api suffix
+	RemoteTokens          map[string]string `yaml:"remoteTokens,omitempty"`          // documentType → token (32-byte hex)
+	UseRemoteTemplate     bool              `yaml:"useRemoteTemplate"`               // master switch; defaults false on existing configs
+	RemoteTimeoutSeconds  int               `yaml:"remoteTimeoutSeconds,omitempty"` // 0 → use default (15s)
+	AllowLocalFallback    bool              `yaml:"allowLocalFallback"`              // remote-fetch error: false=skip print/email, true=use local template
 }
 
 // SMTPConfig holds SMTP server settings for sending invoice emails.
@@ -120,8 +129,11 @@ func Default() Config {
 			User:     "",
 		},
 		PDF: PDFConfig{
-			PrintAfterOrder: false,
-			EmailAfterOrder: false,
+			PrintAfterOrder:      false,
+			EmailAfterOrder:      false,
+			UseRemoteTemplate:    false,
+			AllowLocalFallback:   false,
+			RemoteTimeoutSeconds: 15,
 		},
 		SMTP: SMTPConfig{
 			Port:   587,

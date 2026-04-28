@@ -31,7 +31,13 @@ func (g *Generator) Generate(ctx context.Context, data InvoiceData) ([]byte, err
 	if err != nil {
 		return nil, fmt.Errorf("render html: %w", err)
 	}
+	return g.GenerateFromHTML(ctx, []byte(htmlStr))
+}
 
+// GenerateFromHTML converts a self-contained HTML document (logo + fonts inlined
+// as data URIs) to PDF bytes via headless Chrome. Used by the remote-template
+// flow when the backend pre-renders the document.
+func (g *Generator) GenerateFromHTML(ctx context.Context, htmlBytes []byte) ([]byte, error) {
 	// Write HTML to a temp file and load via file:// URL.
 	// Navigating to a data:text/html URI gives the page an opaque/null origin,
 	// which causes Chrome to block embedded data: images from rendering in PDFs.
@@ -42,7 +48,7 @@ func (g *Generator) Generate(ctx context.Context, data InvoiceData) ([]byte, err
 	tmpPath := tmpFile.Name()
 	defer os.Remove(tmpPath)
 
-	if _, err := tmpFile.WriteString(htmlStr); err != nil {
+	if _, err := tmpFile.Write(htmlBytes); err != nil {
 		tmpFile.Close()
 		return nil, fmt.Errorf("write temp html: %w", err)
 	}

@@ -42,6 +42,11 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 	var smtpFromEdit *walk.LineEdit
 	var smtpTLSCheck *walk.CheckBox
 
+	// Remote template fields (mission 022)
+	var remoteBaseURLEdit, remoteTimeoutEdit, remoteTestDocTypeEdit, remoteTestDocNumberEdit, remoteTestUserExtIDEdit *walk.LineEdit
+	var remoteTokensEdit *walk.TextEdit
+	var useRemoteTemplateCheck, allowLocalFallbackCheck *walk.CheckBox
+
 	setStatus := func(text string) {
 		if statusLabel != nil {
 			statusLabel.SetText(text)
@@ -300,6 +305,66 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 						}()
 					}},
 
+					// ── Remote Template (mission 022) ────────────────
+					HSeparator{},
+					Label{Text: "Remote PDF Template", Font: Font{Bold: true}},
+					Label{Text: "Backend Base URL (e.g. https://api.example.com — no /api suffix)"},
+					LineEdit{AssignTo: &remoteBaseURLEdit, CueBanner: "https://api.example.com"},
+					CheckBox{AssignTo: &useRemoteTemplateCheck, Text: "Use remote template (admin-customized PDF)"},
+					CheckBox{AssignTo: &allowLocalFallbackCheck, Text: "Fall back to local template if remote fetch fails"},
+					Label{Text: "Timeout (seconds, default 15)"},
+					LineEdit{AssignTo: &remoteTimeoutEdit, CueBanner: "15"},
+					Label{Text: "Tokens (one per line: documentType=token)"},
+					TextEdit{AssignTo: &remoteTokensEdit, MinSize: Size{Height: 80}, VScroll: true},
+					Label{Text: "Test fetch — documentType / documentNumber / userExtId"},
+					Composite{
+						Layout: HBox{MarginsZero: true},
+						Children: []Widget{
+							LineEdit{AssignTo: &remoteTestDocTypeEdit, CueBanner: "order"},
+							LineEdit{AssignTo: &remoteTestDocNumberEdit, CueBanner: "ORD-1"},
+							LineEdit{AssignTo: &remoteTestUserExtIDEdit, CueBanner: "USR-9"},
+							PushButton{Text: "Test fetch", OnClicked: func() {
+								setStatus("Testing remote fetch...")
+								go func() {
+									baseURL := strings.TrimSpace(remoteBaseURLEdit.Text())
+									tokens := parseRemoteTokens(remoteTokensEdit.Text())
+									docType := strings.TrimSpace(remoteTestDocTypeEdit.Text())
+									if docType == "" {
+										docType = "order"
+									}
+									token := tokens[docType]
+									if token == "" {
+										dlg.Synchronize(func() { setStatus("No token configured for documentType=" + docType) })
+										return
+									}
+									timeoutSecs, _ := strconv.Atoi(remoteTimeoutEdit.Text())
+									if timeoutSecs <= 0 {
+										timeoutSecs = 15
+									}
+									fetcher := pdf.NewRemoteFetcher(baseURL, time.Duration(timeoutSecs)*time.Second, "erp-connector/test")
+									ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSecs+5)*time.Second)
+									defer cancel()
+									body, err := fetcher.Fetch(ctx,
+										token, docType,
+										strings.TrimSpace(remoteTestDocNumberEdit.Text()),
+										strings.TrimSpace(remoteTestUserExtIDEdit.Text()),
+									)
+									dlg.Synchronize(func() {
+										if err != nil {
+											setStatus("Test fetch failed (token=" + pdf.MaskToken(token) + "): " + err.Error())
+											return
+										}
+										preview := string(body)
+										if len(preview) > 200 {
+											preview = preview[:200] + "..."
+										}
+										setStatus(fmt.Sprintf("Test fetch OK (%d bytes, token=%s) — preview: %s", len(body), pdf.MaskToken(token), preview))
+									})
+								}()
+							}},
+						},
+					},
+
 					// ── Status + Save ────────────────────────────────
 					HSeparator{},
 					Label{AssignTo: &statusLabel},
@@ -333,6 +398,15 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 						cfg.SMTP.User = strings.TrimSpace(smtpUserEdit.Text())
 						cfg.SMTP.FromAddress = strings.TrimSpace(smtpFromEdit.Text())
 						cfg.SMTP.UseTLS = smtpTLSCheck.Checked()
+
+						cfg.PDF.RemoteTemplateBaseURL = strings.TrimSpace(remoteBaseURLEdit.Text())
+						cfg.PDF.UseRemoteTemplate = useRemoteTemplateCheck.Checked()
+						cfg.PDF.AllowLocalFallback = allowLocalFallbackCheck.Checked()
+						remoteTimeoutSecs, _ := strconv.Atoi(strings.TrimSpace(remoteTimeoutEdit.Text()))
+						if remoteTimeoutSecs > 0 {
+							cfg.PDF.RemoteTimeoutSeconds = remoteTimeoutSecs
+						}
+						cfg.PDF.RemoteTokens = parseRemoteTokens(remoteTokensEdit.Text())
 
 						setStatus("Saving...")
 						go func() {
@@ -384,5 +458,66 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 	smtpFromEdit.SetText(cfg.SMTP.FromAddress)
 	smtpTLSCheck.SetChecked(cfg.SMTP.UseTLS)
 
+	remoteBaseURLEdit.SetText(cfg.PDF.RemoteTemplateBaseURL)
+	useRemoteTemplateCheck.SetChecked(cfg.PDF.UseRemoteTemplate)
+	allowLocalFallbackCheck.SetChecked(cfg.PDF.AllowLocalFallback)
+	if cfg.PDF.RemoteTimeoutSeconds > 0 {
+		remoteTimeoutEdit.SetText(strconv.Itoa(cfg.PDF.RemoteTimeoutSeconds))
+	}
+	remoteTokensEdit.SetText(formatRemoteTokens(cfg.PDF.RemoteTokens))
+
 	dlg.Run()
+}
+
+// parseRemoteTokens parses a multi-line "documentType=token" textarea into a
+// map. Whitespace is trimmed; comment lines (# or //) and blank lines are
+// skipped; duplicate documentTypes — last entry wins.
+func parseRemoteTokens(text string) map[string]string {
+	out := map[string]string{}
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+			continue
+		}
+		eq := strings.IndexByte(line, '=')
+		if eq <= 0 {
+			continue
+		}
+		k := strings.TrimSpace(line[:eq])
+		v := strings.TrimSpace(line[eq+1:])
+		if k == "" || v == "" {
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// formatRemoteTokens renders the in-memory map back to "documentType=token"
+// lines for display in the textarea.
+func formatRemoteTokens(tokens map[string]string) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(tokens))
+	for k := range tokens {
+		keys = append(keys, k)
+	}
+	// stable order without importing sort: keys already random in map iteration,
+	// so do a tiny insertion sort to keep the output deterministic across saves.
+	for i := 1; i < len(keys); i++ {
+		j := i
+		for j > 0 && keys[j-1] > keys[j] {
+			keys[j-1], keys[j] = keys[j], keys[j-1]
+			j--
+		}
+	}
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(k)
+		b.WriteByte('=')
+		b.WriteString(tokens[k])
+		b.WriteByte('\n')
+	}
+	return b.String()
 }
