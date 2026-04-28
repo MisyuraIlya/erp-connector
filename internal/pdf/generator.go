@@ -2,10 +2,7 @@ package pdf
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
-	"html/template"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +11,9 @@ import (
 	"github.com/chromedp/cdproto/page"
 )
 
-// Generator produces PDF bytes from InvoiceData using headless Chrome.
+// Generator produces PDF bytes from a pre-rendered HTML document via headless
+// Chrome. The HTML always comes from the backend remote-template route now —
+// the connector no longer ships its own invoice template.
 type Generator struct {
 	chromePath string
 }
@@ -25,18 +24,8 @@ func NewGenerator(chromePath string) *Generator {
 	return &Generator{chromePath: chromePath}
 }
 
-// Generate renders the invoice HTML template and converts it to PDF via headless Chrome.
-func (g *Generator) Generate(ctx context.Context, data InvoiceData) ([]byte, error) {
-	htmlStr, err := renderInvoiceHTML(data)
-	if err != nil {
-		return nil, fmt.Errorf("render html: %w", err)
-	}
-	return g.GenerateFromHTML(ctx, []byte(htmlStr))
-}
-
 // GenerateFromHTML converts a self-contained HTML document (logo + fonts inlined
-// as data URIs) to PDF bytes via headless Chrome. Used by the remote-template
-// flow when the backend pre-renders the document.
+// as data URIs) to PDF bytes via headless Chrome.
 func (g *Generator) GenerateFromHTML(ctx context.Context, htmlBytes []byte) ([]byte, error) {
 	// Write HTML to a temp file and load via file:// URL.
 	// Navigating to a data:text/html URI gives the page an opaque/null origin,
@@ -102,44 +91,4 @@ func (g *Generator) GenerateFromHTML(ctx context.Context, htmlBytes []byte) ([]b
 	}
 
 	return pdfBuf, nil
-}
-
-// GenerateSample creates a sample invoice PDF with dummy data for testing.
-func (g *Generator) GenerateSample(ctx context.Context, companyName, companyAddress, companyPhone, companyFax, companyEmail, logoPath, footerHTML string) ([]byte, error) {
-	var logoDataURI string
-	if logoPath != "" {
-		if data, err := os.ReadFile(logoPath); err == nil {
-			mimeType := http.DetectContentType(data)
-			logoDataURI = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
-		}
-	}
-
-	data := InvoiceData{
-		CompanyName:    companyName,
-		CompanyAddress: companyAddress,
-		CompanyPhone:   companyPhone,
-		CompanyFax:     companyFax,
-		CompanyEmail:   companyEmail,
-		LogoDataURI:    template.URL(logoDataURI),
-		FooterHTML:     template.HTML(footerHTML),
-		DocumentNumber: "12345",
-		Date:           "13/04/2026",
-		CustomerName:   "ישראל ישראלי",
-		CustomerPhone:  "050-1234567",
-		CustomerCompany: "חברה לדוגמה בע\"מ",
-		Comment:        "הזמנת בדיקה",
-		Items: []InvoiceItem{
-			{Index: 1, SKU: "SKU-001", Title: "מוצר ראשון לבדיקה", Quantity: "10", UnitPrice: "50.00", DiscountPct: "5", Total: "475.00"},
-			{Index: 2, SKU: "SKU-002", Title: "מוצר שני לבדיקה", Quantity: "5", UnitPrice: "100.00", DiscountPct: "0", Total: "500.00"},
-			{Index: 3, SKU: "SKU-003", Title: "מוצר שלישי לבדיקה", Quantity: "2", UnitPrice: "250.00", DiscountPct: "10", Total: "450.00"},
-		},
-		TotalBeforeDiscount: "1500.00",
-		DiscountPercent:     "5.00",
-		TotalAfterDiscount:  "1425.00",
-		TaxPercent:          "17",
-		TaxAmount:           "242.25",
-		TotalDue:            "1667.25",
-	}
-
-	return g.Generate(ctx, data)
 }
