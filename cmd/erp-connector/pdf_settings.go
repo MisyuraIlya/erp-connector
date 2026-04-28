@@ -314,7 +314,7 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 					CheckBox{AssignTo: &allowLocalFallbackCheck, Text: "Fall back to local template if remote fetch fails"},
 					Label{Text: "Timeout (seconds, default 15)"},
 					LineEdit{AssignTo: &remoteTimeoutEdit, CueBanner: "15"},
-					Label{Text: "Tokens (one per line: documentType=token)"},
+					Label{Text: "Tokens — one per line, format: documentType=token (e.g. order=abc123…). Paste only the token (no key) to use it for ALL document types."},
 					TextEdit{AssignTo: &remoteTokensEdit, MinSize: Size{Height: 80}, VScroll: true},
 					Label{Text: "Test fetch — documentType / documentNumber / userExtId"},
 					Composite{
@@ -327,14 +327,30 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 								setStatus("Testing remote fetch...")
 								go func() {
 									baseURL := strings.TrimSpace(remoteBaseURLEdit.Text())
-									tokens := parseRemoteTokens(remoteTokensEdit.Text())
+									rawTokens := remoteTokensEdit.Text()
+									tokens := parseRemoteTokens(rawTokens)
 									docType := strings.TrimSpace(remoteTestDocTypeEdit.Text())
 									if docType == "" {
 										docType = "order"
 									}
-									token := tokens[docType]
+									token := lookupTokenCaseInsensitive(tokens, docType)
 									if token == "" {
-										dlg.Synchronize(func() { setStatus("No token configured for documentType=" + docType) })
+										// Tolerant fallback: if the textarea contains a single
+										// non-empty line with no `=`, treat it as the token for
+										// any document type. Lets the operator paste only the
+										// token without remembering the `documentType=` prefix.
+										token = inferBareToken(rawTokens)
+									}
+									if token == "" {
+										parsedKeys := make([]string, 0, len(tokens))
+										for k := range tokens {
+											parsedKeys = append(parsedKeys, k)
+										}
+										msg := fmt.Sprintf(
+											"No token for documentType=%s. Parsed %d entries (keys: %v). Format must be `documentType=token` per line, or paste only the token.",
+											docType, len(tokens), parsedKeys,
+										)
+										dlg.Synchronize(func() { setStatus(msg) })
 										return
 									}
 									timeoutSecs, _ := strconv.Atoi(remoteTimeoutEdit.Text())
@@ -491,6 +507,56 @@ func parseRemoteTokens(text string) map[string]string {
 		out[k] = v
 	}
 	return out
+}
+
+// lookupTokenCaseInsensitive returns the token for documentType, trying the
+// raw key, lowercase, and uppercase forms — matches the runtime hook's
+// lookupRemoteToken behavior so Test fetch and AfterOrder agree.
+func lookupTokenCaseInsensitive(tokens map[string]string, documentType string) string {
+	if len(tokens) == 0 || documentType == "" {
+		return ""
+	}
+	if t, ok := tokens[documentType]; ok && t != "" {
+		return t
+	}
+	lower := strings.ToLower(documentType)
+	upper := strings.ToUpper(documentType)
+	if t, ok := tokens[lower]; ok && t != "" {
+		return t
+	}
+	if t, ok := tokens[upper]; ok && t != "" {
+		return t
+	}
+	for k, v := range tokens {
+		if strings.EqualFold(k, documentType) && v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// inferBareToken returns the only non-comment, non-empty line in `text` if
+// that line contains no `=`. This lets operators paste a single token without
+// remembering the `documentType=` key. Returns "" when the textarea has zero
+// or multiple bare lines, or when any line already has a key=value form.
+func inferBareToken(text string) string {
+	var bare string
+	count := 0
+	for _, raw := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+			continue
+		}
+		if strings.ContainsRune(line, '=') {
+			return "" // structured input present — do not guess
+		}
+		bare = line
+		count++
+	}
+	if count == 1 {
+		return bare
+	}
+	return ""
 }
 
 // formatRemoteTokens renders the in-memory map back to "documentType=token"
