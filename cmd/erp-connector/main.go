@@ -178,6 +178,7 @@ func newMainForm(cfg config.Config, logSvc logger.LoggerService) (*mainForm, err
 							PushButton{Text: "שמירה", OnClicked: f.onSave},
 							PushButton{Text: "Start server", OnClicked: f.onStartServer},
 							PushButton{Text: "Stop server", OnClicked: f.onStopServer},
+							PushButton{Text: "Restart server", OnClicked: f.onRestartServer},
 							PushButton{Text: "Documentation", OnClicked: f.onDocumentation},
 						},
 					},
@@ -512,6 +513,29 @@ func (f *mainForm) onStopServer() {
 				f.setStatus("Failed to stop server service: " + err.Error())
 			} else {
 				f.setStatus("Server service stopped.")
+			}
+		})
+	}()
+}
+
+func (f *mainForm) onRestartServer() {
+	if f.busy {
+		return
+	}
+	f.busy = true
+	f.setStatus("Restarting server...")
+	go func() {
+		stopErr := autostart.StopWindowsService(connectordWindowsServiceName, 20*time.Second)
+		startErr := autostart.StartWindowsService(connectordWindowsServiceName)
+		f.Synchronize(func() {
+			f.busy = false
+			switch {
+			case startErr != nil && stopErr != nil:
+				f.setStatus("Failed to restart server service: " + stopErr.Error() + "; " + startErr.Error())
+			case startErr != nil:
+				f.setStatus("Failed to restart server service: " + startErr.Error())
+			default:
+				f.setStatus("Server service restarted.")
 			}
 		})
 	}()
