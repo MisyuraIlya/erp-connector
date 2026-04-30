@@ -55,6 +55,31 @@ func NewStderr() LoggerService {
 	}
 }
 
+// NewBootstrap opens server.log directly using the OS-specific logger path,
+// without requiring a parsed Config. It exists so the daemon can record
+// startup failures (config.Load errors, missing dirs, permission issues)
+// even when running as a Windows service where stderr is unavailable.
+//
+// On any failure (path resolution, mkdir, file open) it falls back to
+// stderr — never returns nil.
+func NewBootstrap() LoggerService {
+	logPath, err := paths.LoggerFilePath()
+	if err != nil || logPath == "" {
+		return NewStderr()
+	}
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+		return NewStderr()
+	}
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return NewStderr()
+	}
+	return &service{
+		logger: log.New(f, "", log.LstdFlags),
+		file:   f,
+	}
+}
+
 func (s *service) Info(msg string) {
 	s.write("INFO", msg)
 }

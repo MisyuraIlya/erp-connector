@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"path/filepath"
+	"runtime"
 
 	"erp-connector/internal/api"
 	"erp-connector/internal/config"
@@ -33,7 +35,11 @@ type serverApp struct {
 }
 
 func (a *serverApp) Start() error {
-	bootstrapLog := logger.NewStderr()
+	// Bootstrap logger writes directly to server.log so we capture pre-config
+	// failures (config.Load errors, permissions, missing dirs) even when
+	// running as a Windows service where stderr is unavailable.
+	bootstrapLog := logger.NewBootstrap()
+	bootstrapLog.Info(fmt.Sprintf("daemon Start() called: pid=%d goos=%s", os.Getpid(), runtime.GOOS))
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -45,10 +51,11 @@ func (a *serverApp) Start() error {
 		return err
 	}
 	a.cfg = cfg
+	bootstrapLog.Info(fmt.Sprintf("config loaded: erp=%s apiListen=%s sendOrderDir=%q", cfg.ERP, cfg.APIListen, cfg.SendOrderDir))
 
 	logSvc, err := logger.New(cfg)
 	if err != nil {
-		bootstrapLog.Error("logger init failed; using stderr", err)
+		bootstrapLog.Error("logger init failed; using bootstrap logger", err)
 		logSvc = bootstrapLog
 	}
 	a.logSvc = logSvc
