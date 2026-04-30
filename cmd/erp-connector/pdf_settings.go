@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,8 +18,45 @@ import (
 	"erp-connector/internal/email"
 	"erp-connector/internal/logger"
 	"erp-connector/internal/pdf"
+	"erp-connector/internal/print"
 	"erp-connector/internal/secrets"
 )
+
+const wsdSuffix = " (per-user)"
+
+// formatPrinterLabel returns the dropdown label for a printer. WSD-port
+// printers get a " (per-user)" suffix so operators see at-a-glance that the
+// daemon's LocalSystem account cannot reach them. The bare Name is what gets
+// persisted to cfg.PDF.PrinterName.
+func formatPrinterLabel(p print.PrinterInfo) string {
+	if p.IsWSD() {
+		return p.Name + wsdSuffix
+	}
+	return p.Name
+}
+
+// stripPrinterLabelSuffix returns the bare printer name from a label that may
+// include the " (per-user)" annotation. Safe to call on hand-typed text too.
+func stripPrinterLabelSuffix(label string) string {
+	label = strings.TrimSpace(label)
+	if strings.HasSuffix(label, wsdSuffix) {
+		return strings.TrimSuffix(label, wsdSuffix)
+	}
+	return label
+}
+
+// findPrinterByLabel returns the PrinterInfo whose formatted label matches
+// `label`, or nil if no match. Used to drive the WSD-warning surface based on
+// the current ComboBox selection.
+func findPrinterByLabel(printers []print.PrinterInfo, label string) *print.PrinterInfo {
+	bare := stripPrinterLabelSuffix(label)
+	for i := range printers {
+		if printers[i].Name == bare {
+			return &printers[i]
+		}
+	}
+	return nil
+}
 
 // showPDFSettingsDialog opens a separate window for PDF, Print, and Email configuration.
 // Changes are saved directly to config when the user clicks Save.
@@ -26,8 +65,15 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 	var statusLabel *walk.Label
 
 	// PDF engine fields
-	var chromePathEdit, sumatraPathEdit, printerNameEdit *walk.LineEdit
+	var chromePathEdit, sumatraPathEdit *walk.LineEdit
+	var printerCombo *walk.ComboBox
+	var printerWarningLabel *walk.Label
 	var printAfterOrderCheck *walk.CheckBox
+
+	// detectedPrinters is the most recent ListPrinters() result. The ComboBox
+	// model is derived from it so we can map a selected label back to its
+	// PrinterInfo (port, driver, status) for warning logic.
+	var detectedPrinters []print.PrinterInfo
 
 	// Email fields
 	var emailAfterOrderCheck *walk.CheckBox
@@ -111,8 +157,83 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 					HSeparator{},
 					Label{Text: "Print Settings", Font: Font{Bold: true}},
 					CheckBox{AssignTo: &printAfterOrderCheck, Text: "Print PDF after send order"},
-					Label{Text: "Printer Name (empty = default)"},
-					LineEdit{AssignTo: &printerNameEdit, CueBanner: "Leave empty for default printer"},
+					Label{Text: "Printer (empty = system default)"},
+					ComboBox{
+						AssignTo: &printerCombo,
+						Editable: true,
+						OnEditingFinished: func() {
+							refreshPrinterWarning(printerCombo, printerWarningLabel, &detectedPrinters)
+						},
+						OnCurrentIndexChanged: func() {
+							refreshPrinterWarning(printerCombo, printerWarningLabel, &detectedPrinters)
+						},
+					},
+					Label{AssignTo: &printerWarningLabel, TextColor: walk.RGB(180, 90, 0)},
+					Composite{
+						Layout: HBox{MarginsZero: true},
+						Children: []Widget{
+							PushButton{Text: "Refresh printers", OnClicked: func() {
+								setStatus("Loading printers…")
+								go func() {
+									ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+									defer cancel()
+									printers, err := print.ListPrinters(ctx)
+									dlg.Synchronize(func() {
+										if err != nil {
+											setStatus("Refresh printers failed: " + err.Error())
+											return
+										}
+										detectedPrinters = printers
+										current := strings.TrimSpace(printerCombo.Text())
+										labels := make([]string, 0, len(printers))
+										for _, p := range printers {
+											labels = append(labels, formatPrinterLabel(p))
+										}
+										_ = printerCombo.SetModel(labels)
+										if current != "" {
+											printerCombo.SetText(current)
+										}
+										refreshPrinterWarning(printerCombo, printerWarningLabel, &detectedPrinters)
+										setStatus(fmt.Sprintf("Loaded %d printers.", len(printers)))
+									})
+								}()
+							}},
+							PushButton{Text: "Install network printer…", OnClicked: func() {
+								showInstallPrinterDialog(dlg, func(installedName string) {
+									// Refresh list after install + select new printer.
+									go func() {
+										ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+										defer cancel()
+										printers, err := print.ListPrinters(ctx)
+										dlg.Synchronize(func() {
+											if err != nil {
+												setStatus("Refresh after install failed: " + err.Error())
+												return
+											}
+											detectedPrinters = printers
+											labels := make([]string, 0, len(printers))
+											for _, p := range printers {
+												labels = append(labels, formatPrinterLabel(p))
+											}
+											_ = printerCombo.SetModel(labels)
+											printerCombo.SetText(installedName)
+											refreshPrinterWarning(printerCombo, printerWarningLabel, &detectedPrinters)
+											setStatus("Installed printer '" + installedName + "'.")
+										})
+									}()
+								})
+							}},
+							PushButton{Text: "Test print", OnClicked: func() {
+								selected := stripPrinterLabelSuffix(printerCombo.Text())
+								setStatus("Test print: rendering…")
+								go runTestPrint(dlg, setStatus, selected,
+									strings.TrimSpace(chromePathEdit.Text()),
+									strings.TrimSpace(sumatraPathEdit.Text()),
+									logSvc,
+								)
+							}},
+						},
+					},
 
 					// ── Email Settings ───────────────────────────────
 					HSeparator{},
@@ -255,7 +376,7 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 						cfg.PDF.ChromePath = strings.TrimSpace(chromePathEdit.Text())
 						cfg.PDF.SumatraPDFPath = strings.TrimSpace(sumatraPathEdit.Text())
 						cfg.PDF.PrintAfterOrder = printAfterOrderCheck.Checked()
-						cfg.PDF.PrinterName = strings.TrimSpace(printerNameEdit.Text())
+						cfg.PDF.PrinterName = stripPrinterLabelSuffix(printerCombo.Text())
 						cfg.PDF.EmailAfterOrder = emailAfterOrderCheck.Checked()
 						cfg.SMTP.Host = strings.TrimSpace(smtpHostEdit.Text())
 						smtpPort, _ := strconv.Atoi(smtpPortEdit.Text())
@@ -324,7 +445,40 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 	chromePathEdit.SetText(cfg.PDF.ChromePath)
 	sumatraPathEdit.SetText(cfg.PDF.SumatraPDFPath)
 	printAfterOrderCheck.SetChecked(cfg.PDF.PrintAfterOrder)
-	printerNameEdit.SetText(cfg.PDF.PrinterName)
+	// Pre-fill the typed value so the operator sees what's currently saved
+	// even before the async ListPrinters() finishes.
+	printerCombo.SetText(cfg.PDF.PrinterName)
+	// Kick off async printer enumeration; populates the dropdown model.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		printers, err := print.ListPrinters(ctx)
+		dlg.Synchronize(func() {
+			if err != nil {
+				setStatus("Could not list printers: " + err.Error())
+				return
+			}
+			detectedPrinters = printers
+			labels := make([]string, 0, len(printers))
+			for _, p := range printers {
+				labels = append(labels, formatPrinterLabel(p))
+			}
+			_ = printerCombo.SetModel(labels)
+			// Re-set the text after model swap (Walk clears it on SetModel).
+			if cfg.PDF.PrinterName != "" {
+				for _, p := range printers {
+					if p.Name == cfg.PDF.PrinterName {
+						printerCombo.SetText(formatPrinterLabel(p))
+						break
+					}
+				}
+				if printerCombo.Text() == "" {
+					printerCombo.SetText(cfg.PDF.PrinterName)
+				}
+			}
+			refreshPrinterWarning(printerCombo, printerWarningLabel, &detectedPrinters)
+		})
+	}()
 	emailAfterOrderCheck.SetChecked(cfg.PDF.EmailAfterOrder)
 	smtpHostEdit.SetText(cfg.SMTP.Host)
 	smtpPortEdit.SetText(strconv.Itoa(cfg.SMTP.Port))
@@ -443,4 +597,177 @@ func formatRemoteTokens(tokens map[string]string) string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// refreshPrinterWarning updates the small per-user warning label below the
+// printer ComboBox based on the currently selected/typed printer. WSD-port
+// printers cannot be reached by the LocalSystem-running daemon, so we surface
+// that as a non-blocking warning rather than a hard error — the operator may
+// still want to keep the field empty (system default) or hand-enter a name.
+func refreshPrinterWarning(combo *walk.ComboBox, label *walk.Label, printers *[]print.PrinterInfo) {
+	if combo == nil || label == nil {
+		return
+	}
+	text := combo.Text()
+	if printers == nil {
+		label.SetText("")
+		return
+	}
+	p := findPrinterByLabel(*printers, text)
+	if p != nil && p.IsWSD() {
+		label.SetText("⚠ This printer is per-user (WSD). The daemon (LocalSystem) cannot reach it. Use \"Install network printer…\" to install machine-wide.")
+	} else {
+		label.SetText("")
+	}
+}
+
+// showInstallPrinterDialog opens a sub-dialog for installing a TCP/IP printer
+// machine-wide. onSuccess is invoked with the new printer's name once the
+// install succeeds — the parent dialog uses that to refresh its dropdown and
+// select the new entry.
+func showInstallPrinterDialog(owner walk.Form, onSuccess func(installedName string)) {
+	var sub *walk.Dialog
+	var subStatus *walk.Label
+	var hostEdit, nameEdit *walk.LineEdit
+	var driverCombo *walk.ComboBox
+	var installButton, cancelButton *walk.PushButton
+
+	setSubStatus := func(text string) {
+		if subStatus != nil {
+			subStatus.SetText(text)
+		}
+	}
+
+	err := (Dialog{
+		AssignTo:      &sub,
+		Title:         "Install network printer",
+		MinSize:       Size{Width: 440, Height: 240},
+		DefaultButton: &installButton,
+		CancelButton:  &cancelButton,
+		Layout:        VBox{},
+		Children: []Widget{
+			Label{Text: "Printer IP or hostname"},
+			LineEdit{AssignTo: &hostEdit, CueBanner: "192.168.1.50"},
+			Label{Text: "Driver (must be already installed on this machine)"},
+			ComboBox{AssignTo: &driverCombo, Editable: false},
+			Label{Text: "Printer name (how it appears in Windows)"},
+			LineEdit{AssignTo: &nameEdit, CueBanner: "e.g. BADIR-NET"},
+			Label{AssignTo: &subStatus},
+			Composite{
+				Layout: HBox{},
+				Children: []Widget{
+					HSpacer{},
+					PushButton{AssignTo: &installButton, Text: "Install", OnClicked: func() {
+						host := strings.TrimSpace(hostEdit.Text())
+						name := strings.TrimSpace(nameEdit.Text())
+						driver := driverCombo.Text()
+						if host == "" || name == "" || driver == "" {
+							setSubStatus("All fields are required.")
+							return
+						}
+						setSubStatus("Installing…")
+						installButton.SetEnabled(false)
+						go func() {
+							ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+							defer cancel()
+							err := print.InstallTCPPrinter(ctx, name, host, driver)
+							sub.Synchronize(func() {
+								installButton.SetEnabled(true)
+								if err != nil {
+									setSubStatus("Install failed: " + err.Error())
+									return
+								}
+								setSubStatus("Installed.")
+								if onSuccess != nil {
+									onSuccess(name)
+								}
+								sub.Accept()
+							})
+						}()
+					}},
+					PushButton{AssignTo: &cancelButton, Text: "Cancel", OnClicked: func() {
+						sub.Cancel()
+					}},
+				},
+			},
+		},
+	}).Create(owner)
+	if err != nil {
+		walk.MsgBox(owner, "Error", "Failed to open install dialog: "+err.Error(), walk.MsgBoxIconError)
+		return
+	}
+
+	// Populate driver list async so the dialog opens instantly.
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		drivers, err := print.ListPrinterDrivers(ctx)
+		sub.Synchronize(func() {
+			if err != nil {
+				setSubStatus("Could not list drivers: " + err.Error())
+				return
+			}
+			_ = driverCombo.SetModel(drivers)
+		})
+	}()
+
+	sub.Run()
+}
+
+// runTestPrint generates a tiny PDF via the existing chromedp pipeline and
+// sends it to the selected printer through SumatraPDF. Surfaces the outcome
+// in the parent dialog's status label. printerName "" means "system default"
+// — same semantics as the runtime AfterOrder path.
+func runTestPrint(dlg *walk.Dialog, setStatus func(string), printerName, chromePath, sumatraPath string, logSvc logger.LoggerService) {
+	if chromePath == "" {
+		chromePath = pdf.DetectChrome()
+	}
+	if chromePath == "" {
+		dlg.Synchronize(func() { setStatus("Test print failed: Chrome not found — set Chrome Path or install Chrome.") })
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	gen := pdf.NewGenerator(chromePath)
+	target := printerName
+	if target == "" {
+		target = "<system default>"
+	}
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html><html><body style="font-family:sans-serif;padding:40px;">
+<h1>erp-connector test print</h1>
+<p>If you can read this page on paper, the PDF + print pipeline works end-to-end.</p>
+<p><b>Time:</b> %s</p>
+<p><b>Printer:</b> %s</p>
+</body></html>`, html.EscapeString(time.Now().Format(time.RFC3339)), html.EscapeString(target))
+
+	pdfBytes, err := gen.GenerateFromHTML(ctx, []byte(htmlBody))
+	if err != nil {
+		dlg.Synchronize(func() { setStatus("Test print: PDF render failed: " + err.Error()) })
+		return
+	}
+
+	tmp, err := os.CreateTemp("", "erp-connector-testprint-*.pdf")
+	if err != nil {
+		dlg.Synchronize(func() { setStatus("Test print: temp file failed: " + err.Error()) })
+		return
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(pdfBytes); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		dlg.Synchronize(func() { setStatus("Test print: temp write failed: " + err.Error()) })
+		return
+	}
+	_ = tmp.Close()
+	defer os.Remove(tmpPath)
+
+	if err := print.PrintPDF(ctx, tmpPath, printerName, sumatraPath, logSvc); err != nil {
+		dlg.Synchronize(func() { setStatus("Test print failed: " + err.Error()) })
+		return
+	}
+	dlg.Synchronize(func() {
+		setStatus("Test print sent to " + target + ". Check the printer queue.")
+	})
 }
