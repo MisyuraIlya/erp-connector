@@ -53,21 +53,29 @@ func (a *serverApp) Start() error {
 	a.cfg = cfg
 	bootstrapLog.Info(fmt.Sprintf("config loaded: erp=%s apiListen=%s sendOrderDir=%q", cfg.ERP, cfg.APIListen, cfg.SendOrderDir))
 
+	bootstrapLog.Info("calling logger.New(cfg)")
 	logSvc, err := logger.New(cfg)
 	if err != nil {
 		bootstrapLog.Error("logger init failed; using bootstrap logger", err)
 		logSvc = bootstrapLog
 	}
 	a.logSvc = logSvc
+	bootstrapLog.Info("logger.New(cfg) returned")
 
+	logSvc.Info(fmt.Sprintf("calling secrets.Get for db password (key=%s)", dbPasswordKey(cfg.ERP)))
 	dbPassword, dbPassErr := secrets.Get(dbPasswordKey(cfg.ERP))
 	if dbPassErr != nil {
 		logSvc.Error("failed to load db password", dbPassErr)
 	}
 	if dbPassErr == nil {
 		a.dbPassStr = string(dbPassword)
+		logSvc.Info(fmt.Sprintf("db password loaded (length=%d)", len(a.dbPassStr)))
 	}
 
+	logSvc.Info(fmt.Sprintf(
+		"calling db.Open: driver=%s host=%s port=%d database=%s user=%s",
+		cfg.DB.Driver, cfg.DB.Host, cfg.DB.Port, cfg.DB.Database, cfg.DB.User,
+	))
 	dbConn, err := db.Open(cfg, a.dbPassStr, db.DefaultOptions())
 	if err != nil {
 		logSvc.Error("db connection failed", err)
@@ -75,6 +83,7 @@ func (a *serverApp) Start() error {
 		return err
 	}
 	a.dbConn = dbConn
+	logSvc.Info("db.Open returned successfully")
 
 	// Build the send-order queue for Hasavshevet.
 	// Order number file lives next to IMOVEIN files for self-contained directory.
@@ -141,6 +150,7 @@ func (a *serverApp) Start() error {
 	go func() {
 		a.errCh <- srv.ListenAndServe()
 	}()
+	logSvc.Info(fmt.Sprintf("HTTP server goroutine launched, will listen on %s", srv.Addr))
 
 	logSvc.Info(fmt.Sprintf("erp-connectord listening on %s", srv.Addr))
 	return nil
