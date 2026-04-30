@@ -54,11 +54,12 @@ func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, 
 
 	cmd := exec.CommandContext(printCtx, sumatraPath, args...)
 	output, err := cmd.CombinedOutput()
+	trimmedOutput := strings.TrimSpace(string(output))
 	if err != nil {
-		return fmt.Errorf("SumatraPDF print failed (exit: %v, output: %s): %w", cmd.ProcessState.ExitCode(), string(output), err)
+		return fmt.Errorf("SumatraPDF print failed (exit: %v, output: %q): %w", cmd.ProcessState.ExitCode(), trimmedOutput, err)
 	}
 	if log != nil {
-		log.Info(fmt.Sprintf("print.PrintPDF exec ok (output bytes=%d)", len(output)))
+		log.Info(fmt.Sprintf("print.PrintPDF exec ok (exit=%d, output=%q)", cmd.ProcessState.ExitCode(), trimmedOutput))
 	}
 	return nil
 }
