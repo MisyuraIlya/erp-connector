@@ -68,7 +68,7 @@ func (h *PDFPostOrderHook) AfterOrder(ctx context.Context, req OrderRequest, res
 		return nil
 	}
 
-	pdfBytes, err := h.fetchRemoteHTMLAndRenderPDF(ctx, token, req)
+	pdfBytes, err := h.fetchRemoteHTMLAndRenderPDF(ctx, token, req, orderNum)
 	if err != nil {
 		h.log.Error(fmt.Sprintf(
 			"remote template fetch/render failed for order %s (token=%s) — print/email skipped",
@@ -86,7 +86,12 @@ func (h *PDFPostOrderHook) AfterOrder(ctx context.Context, req OrderRequest, res
 
 // fetchRemoteHTMLAndRenderPDF asks the backend for the rendered HTML, then runs
 // the existing chromedp HTML→PDF pipeline. The token never appears in errors.
-func (h *PDFPostOrderHook) fetchRemoteHTMLAndRenderPDF(ctx context.Context, token string, req OrderRequest) ([]byte, error) {
+//
+// documentNumber is the user-visible order number (e.g. "1000011" — the
+// externalOrderId / Hasavshevet order number from result.OrderNumber). The
+// backend resolves this via History.orderExtId. Passing req.HistoryID (an
+// internal UUID) here would 404 because the backend has no row keyed by that.
+func (h *PDFPostOrderHook) fetchRemoteHTMLAndRenderPDF(ctx context.Context, token string, req OrderRequest, documentNumber string) ([]byte, error) {
 	timeout := time.Duration(h.cfg.PDF.RemoteTimeoutSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 15 * time.Second
@@ -100,11 +105,16 @@ func (h *PDFPostOrderHook) fetchRemoteHTMLAndRenderPDF(ctx context.Context, toke
 	fetchCtx, fetchCancel := context.WithTimeout(ctx, timeout+5*time.Second)
 	defer fetchCancel()
 
+	h.log.Info(fmt.Sprintf(
+		"remote fetch: documentType=%q documentNumber=%s userExtId=%s baseURL=%q",
+		req.DocumentType, documentNumber, req.UserExtID, h.cfg.PDF.RemoteTemplateBaseURL,
+	))
+
 	htmlBytes, err := fetcher.Fetch(
 		fetchCtx,
 		token,
 		strings.ToLower(req.DocumentType),
-		fmt.Sprintf("%s", req.HistoryID),
+		documentNumber,
 		req.UserExtID,
 	)
 	if err != nil {
