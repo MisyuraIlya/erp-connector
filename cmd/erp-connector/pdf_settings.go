@@ -40,8 +40,6 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 	var remoteTokensEdit *walk.TextEdit
 	var useRemoteTemplateCheck *walk.CheckBox
 
-	_ = logSvc // suppress unused if no callbacks reference logSvc
-
 	setStatus := func(text string) {
 		if statusLabel != nil {
 			statusLabel.SetText(text)
@@ -283,16 +281,30 @@ func showPDFSettingsDialog(owner walk.Form, cfg *config.Config, logSvc logger.Lo
 							smtpPass := smtpPassEdit.Text()
 							if smtpPass != "" {
 								if err := secrets.Set("smtp_password", []byte(smtpPass)); err != nil {
+									if logSvc != nil {
+										logSvc.Error("PDF settings: failed to save SMTP password", err)
+									}
 									dlg.Synchronize(func() { setStatus("Failed to save SMTP password: " + err.Error()) })
 									return
 								}
 							}
 							// Save config
 							if err := config.Save(*cfg); err != nil {
+								if logSvc != nil {
+									logSvc.Error("PDF settings: failed to save config", err)
+								}
 								dlg.Synchronize(func() { setStatus("Failed to save config: " + err.Error()) })
 								return
 							}
-							dlg.Synchronize(func() { setStatus("נשמר בהצלחה.") })
+							if logSvc != nil {
+								logSvc.Info(fmt.Sprintf(
+									"PDF settings saved: PrintAfterOrder=%v EmailAfterOrder=%v UseRemoteTemplate=%v RemoteTemplateBaseURL=%q tokenCount=%d ChromePath=%q SumatraPDFPath=%q PrinterName=%q — RESTART erp-connectord daemon for changes to take effect",
+									cfg.PDF.PrintAfterOrder, cfg.PDF.EmailAfterOrder, cfg.PDF.UseRemoteTemplate,
+									cfg.PDF.RemoteTemplateBaseURL, len(cfg.PDF.RemoteTokens),
+									cfg.PDF.ChromePath, cfg.PDF.SumatraPDFPath, cfg.PDF.PrinterName,
+								))
+							}
+							dlg.Synchronize(func() { setStatus("נשמר בהצלחה. הפעל מחדש את erp-connectord (restart the daemon) כדי שהשינויים ייכנסו לתוקף.") })
 						}()
 					}},
 					PushButton{Text: "Close", OnClicked: func() {

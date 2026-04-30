@@ -5,10 +5,12 @@ package print
 import (
 	"context"
 	"errors"
+
+	"erp-connector/internal/logger"
 )
 
 // PrintPDF is not supported on non-Windows platforms.
-func PrintPDF(_ context.Context, _, _, _ string) error {
+func PrintPDF(_ context.Context, _, _, _ string, _ logger.LoggerService) error {
 	return errors.New("printing is only supported on Windows")
 }
 

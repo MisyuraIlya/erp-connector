@@ -8,13 +8,31 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"erp-connector/internal/logger"
 )
 
 // PrintPDF sends a PDF file to the printer via SumatraPDF.
 // If printerName is empty, the system default printer is used.
-func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string) error {
+// log may be nil; when non-nil, diagnostic info is recorded around the print call.
+func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, log logger.LoggerService) error {
 	sumatraPath := resolveSumatraPDF(sumatraPDFPath)
+	if log != nil {
+		printerDisplay := printerName
+		if printerDisplay == "" {
+			printerDisplay = "<system default>"
+		}
+		resolvedDisplay := sumatraPath
+		if resolvedDisplay == "" {
+			resolvedDisplay = "<not found>"
+		}
+		log.Info(fmt.Sprintf(
+			"print.PrintPDF: pdfPath=%q printer=%s configuredSumatra=%q resolvedSumatra=%s",
+			pdfPath, printerDisplay, sumatraPDFPath, resolvedDisplay,
+		))
+	}
 	if sumatraPath == "" {
 		return fmt.Errorf("SumatraPDF not found; install it or set the path in config")
 	}
@@ -30,10 +48,17 @@ func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string) 
 	printCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	if log != nil {
+		log.Info(fmt.Sprintf("print.PrintPDF exec: %s %s", sumatraPath, strings.Join(args, " ")))
+	}
+
 	cmd := exec.CommandContext(printCtx, sumatraPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("SumatraPDF print failed (exit: %v, output: %s): %w", cmd.ProcessState.ExitCode(), string(output), err)
+	}
+	if log != nil {
+		log.Info(fmt.Sprintf("print.PrintPDF exec ok (output bytes=%d)", len(output)))
 	}
 	return nil
 }

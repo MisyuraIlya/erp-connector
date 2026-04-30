@@ -44,6 +44,13 @@ func NewPDFPostOrderHook(cfg config.Config, pdfGen *pdf.Generator, emailSend *em
 func (h *PDFPostOrderHook) AfterOrder(ctx context.Context, req OrderRequest, result *OrderResult) error {
 	orderNum := fmt.Sprintf("%d", result.OrderNumber)
 
+	h.log.Info(fmt.Sprintf(
+		"AfterOrder invoked: order=%s documentType=%q UseRemoteTemplate=%v PrintAfterOrder=%v EmailAfterOrder=%v hasCustomerEmail=%v tokenCount=%d",
+		orderNum, req.DocumentType, h.cfg.PDF.UseRemoteTemplate,
+		h.cfg.PDF.PrintAfterOrder, h.cfg.PDF.EmailAfterOrder,
+		req.CustomerEmail != "", len(h.cfg.PDF.RemoteTokens),
+	))
+
 	if !h.cfg.PDF.UseRemoteTemplate {
 		h.log.Warn(fmt.Sprintf(
 			"UseRemoteTemplate is false — print/email skipped for order %s. Local template support was removed; enable UseRemoteTemplate and configure RemoteTokens.",
@@ -118,20 +125,39 @@ func (h *PDFPostOrderHook) fetchRemoteHTMLAndRenderPDF(ctx context.Context, toke
 func (h *PDFPostOrderHook) dispatchPDF(ctx context.Context, orderNum string, pdfBytes []byte, customerEmail string) error {
 	historyDir := filepath.Join(h.cfg.SendOrderDir, "history", orderNum)
 	pdfPath := filepath.Join(historyDir, fmt.Sprintf("invoice_%s.pdf", orderNum))
-	if err := os.MkdirAll(historyDir, 0o755); err == nil {
+
+	h.log.Info(fmt.Sprintf(
+		"dispatchPDF start: order=%s pdfBytes=%d historyDir=%q PrintAfterOrder=%v EmailAfterOrder=%v emailSenderConfigured=%v PrinterName=%q SumatraPDFPath=%q",
+		orderNum, len(pdfBytes), historyDir,
+		h.cfg.PDF.PrintAfterOrder, h.cfg.PDF.EmailAfterOrder,
+		h.emailSend != nil, h.cfg.PDF.PrinterName, h.cfg.PDF.SumatraPDFPath,
+	))
+
+	pdfWritten := false
+	if err := os.MkdirAll(historyDir, 0o755); err != nil {
+		h.log.Warn(fmt.Sprintf("failed to create history dir %q: %v", historyDir, err))
+	} else {
 		if err := os.WriteFile(pdfPath, pdfBytes, 0o644); err != nil {
 			h.log.Warn(fmt.Sprintf("failed to save PDF to history: %v", err))
 		} else {
+			pdfWritten = true
 			h.log.Info(fmt.Sprintf("PDF saved to %s", pdfPath))
 		}
 	}
 
 	if h.cfg.PDF.PrintAfterOrder {
-		if err := print.PrintPDF(ctx, pdfPath, h.cfg.PDF.PrinterName, h.cfg.PDF.SumatraPDFPath); err != nil {
-			h.log.Warn(fmt.Sprintf("print failed for order %s: %v", orderNum, err))
+		if !pdfWritten {
+			h.log.Warn(fmt.Sprintf("print skipped for order %s: PDF was not written to %s", orderNum, pdfPath))
 		} else {
-			h.log.Success(fmt.Sprintf("PDF printed for order %s", orderNum))
+			h.log.Info(fmt.Sprintf("calling print.PrintPDF for order %s: path=%s printer=%q sumatra=%q", orderNum, pdfPath, h.cfg.PDF.PrinterName, h.cfg.PDF.SumatraPDFPath))
+			if err := print.PrintPDF(ctx, pdfPath, h.cfg.PDF.PrinterName, h.cfg.PDF.SumatraPDFPath, h.log); err != nil {
+				h.log.Warn(fmt.Sprintf("print failed for order %s: %v", orderNum, err))
+			} else {
+				h.log.Success(fmt.Sprintf("PDF printed for order %s", orderNum))
+			}
 		}
+	} else {
+		h.log.Info(fmt.Sprintf("print skipped for order %s: PrintAfterOrder=false in config", orderNum))
 	}
 
 	if h.cfg.PDF.EmailAfterOrder && h.emailSend != nil {
@@ -144,6 +170,8 @@ func (h *PDFPostOrderHook) dispatchPDF(ctx context.Context, orderNum string, pdf
 				h.log.Success(fmt.Sprintf("PDF emailed to %s for order %s", customerEmail, orderNum))
 			}
 		}
+	} else {
+		h.log.Info(fmt.Sprintf("email skipped for order %s: EmailAfterOrder=%v emailSenderConfigured=%v", orderNum, h.cfg.PDF.EmailAfterOrder, h.emailSend != nil))
 	}
 
 	return nil

@@ -76,14 +76,21 @@ func (a *serverApp) Start() error {
 	sender := hasavshevet.NewSender(dbConn, cfg, numStore, logSvc)
 
 	// Set up post-order hooks (PDF generation, printing, email).
+	logSvc.Info(fmt.Sprintf(
+		"PDF config snapshot at startup: PrintAfterOrder=%v EmailAfterOrder=%v UseRemoteTemplate=%v RemoteTemplateBaseURL=%q tokenCount=%d ChromePath=%q SumatraPDFPath=%q PrinterName=%q",
+		cfg.PDF.PrintAfterOrder, cfg.PDF.EmailAfterOrder, cfg.PDF.UseRemoteTemplate,
+		cfg.PDF.RemoteTemplateBaseURL, len(cfg.PDF.RemoteTokens),
+		cfg.PDF.ChromePath, cfg.PDF.SumatraPDFPath, cfg.PDF.PrinterName,
+	))
 	var postHooks []hasavshevet.PostOrderHook
 	if cfg.PDF.PrintAfterOrder || cfg.PDF.EmailAfterOrder {
 		chromePath := cfg.PDF.ChromePath
 		if chromePath == "" {
 			chromePath = pdf.DetectChrome()
+			logSvc.Info(fmt.Sprintf("ChromePath empty in config; auto-detect resolved=%q", chromePath))
 		}
 		if chromePath == "" {
-			logSvc.Warn("Chrome not found; PDF generation after order will be skipped")
+			logSvc.Warn("Chrome not found; PDF generation after order will be skipped (no PDF post-order hook will be registered)")
 		} else {
 			pdfGen := pdf.NewGenerator(chromePath)
 
@@ -100,6 +107,8 @@ func (a *serverApp) Start() error {
 			logSvc.Info(fmt.Sprintf("PDF post-order hook enabled (print=%v, email=%v, chrome=%s)",
 				cfg.PDF.PrintAfterOrder, cfg.PDF.EmailAfterOrder, chromePath))
 		}
+	} else {
+		logSvc.Warn("no PDF post-order hook registered: both PrintAfterOrder and EmailAfterOrder are false in config — toggle them in the GUI Settings → PDF & Email Settings, click Save, then RESTART erp-connectord for changes to take effect")
 	}
 
 	queue := hasavshevet.NewOrderQueue(sender, logSvc, postHooks...)
