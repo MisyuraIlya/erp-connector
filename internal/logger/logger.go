@@ -40,13 +40,34 @@ func New(cfg config.Config) (LoggerService, error) {
 
 	var out io.Writer = f
 	if cfg.Debug {
-		out = io.MultiWriter(os.Stderr, f)
+		// File MUST come first: io.MultiWriter aborts on the first error,
+		// so if stderr is wrapped instead-of-first, a broken stderr cannot
+		// block the file write. The swallowingWriter additionally guarantees
+		// that any stderr failure (Windows services receive an invalid stderr
+		// handle from the SCM) never propagates up — the log call still
+		// succeeds and the file still gets the line.
+		out = io.MultiWriter(f, &swallowingWriter{w: os.Stderr})
 	}
 
 	return &service{
 		logger: log.New(out, "", log.LstdFlags),
 		file:   f,
 	}, nil
+}
+
+// swallowingWriter writes to the underlying writer but always reports
+// success. Used to mirror logs to stderr in debug mode without letting
+// an invalid stderr (Windows service mode) cause the surrounding
+// io.MultiWriter to short-circuit and skip the real file write.
+type swallowingWriter struct {
+	w io.Writer
+}
+
+func (s *swallowingWriter) Write(p []byte) (int, error) {
+	if s.w != nil {
+		_, _ = s.w.Write(p)
+	}
+	return len(p), nil
 }
 
 func NewStderr() LoggerService {
