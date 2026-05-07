@@ -16,6 +16,7 @@ A Go application providing a local HTTP REST API gateway between the main app an
 3. `docs/security.md`
 4. `docs/sql-validation.md`
 5. `docs/api.md`
+6. `docs/printing.md` — required if touching anything in `internal/print/` or the post-order PDF print step. The print path has hard-won constraints (Windows session 0, WSD ports, engine fallback order) that are not obvious from the code.
 
 Do not start implementing features before understanding the constraints in these docs.
 
@@ -249,3 +250,10 @@ go build -o erp-connector.exe ./cmd/erp-connector
 - ❌ Using `data:text/html;base64,...` as the Chrome navigation URL — Chrome treats this as opaque/null origin and blocks embedded `data:` images from rendering in PDFs. Always write HTML to a temp file and navigate via `file://`
 - ❌ Typing `LogoDataURI` (or any `data:` URI in an HTML template attribute) as `string` — Go's `html/template` silently replaces `data:` URIs with `#ZgotmplZ`. Must be `template.URL`
 - ❌ Hardcoding `"image/png"` as MIME type for logo — use `http.DetectContentType(data)` to detect from file content
+
+### PDF printing (read `docs/printing.md` first)
+- ❌ Trusting SumatraPDF `-silent` exit code — it returns 0 even when no job is submitted on certain Type 4 / Class drivers. The "ParseFlags" output in stderr is not a success signal.
+- ❌ Recommending Adobe Reader `/t` as the engine for a Windows service — Adobe DC depends on a real desktop / window station to initialize; it hangs in session 0. Switching the service to a real user account does not help because services live in session 0 regardless of which user runs them.
+- ❌ Using a printer with a `WSD-*` port name from the daemon — WSD requires session-bound Function Discovery / PNP-X services that session 0 does not have. The spooler accepts the job, the queue drains, and nothing reaches the device. Always use a Standard TCP/IP Port equivalent.
+- ❌ Saying "print succeeded" because the daemon log says `[OK] PDF printed for order ...` — that line is logged on engine exit-0 alone. Confirm with the engine-specific success line (`print.pdftoprinter exec ok ...`) AND the physical printer.
+- ❌ Removing `PDFtoPrinter.exe` / `qpdf29.dll` / `resource.dat` from the installer or release workflow — the daemon falls back to Adobe / SumatraPDF, which fails silently in session 0. All three files must ship together.

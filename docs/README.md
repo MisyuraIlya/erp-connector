@@ -20,7 +20,8 @@ The GUI uses **walk** (native Win32 controls) and runs on Windows without any GP
 6. `autostart.md` – Windows Service / systemd / launchd
 7. `hasavshevet-send-order.md` – send-order queue, IMOVEIN format, runbook
 8. `pdf-email.md` – PDF generation, auto-print, email, Test Print, known pitfalls
-9. `gui-migration.md` – why Fyne was replaced with walk (history/context)
+9. `printing.md` – print engine ranking (PDFtoPrinter / Adobe / SumatraPDF), Windows session-0 pitfalls, build & release of bundled binaries, runbook for "did not print" reports
+10. `gui-migration.md` – why Fyne was replaced with walk (history/context)
 
 ## Non-goals
 

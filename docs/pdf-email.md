@@ -4,7 +4,9 @@
 
 After each successful `sendOrder`, the daemon can automatically:
 1. **Generate** a PDF invoice from the order data using headless Chrome.
-2. **Print** the PDF to a local printer via SumatraPDF.
+2. **Print** the PDF to a local printer. For the engine ranking
+   (`PDFtoPrinter` → Adobe → SumatraPDF), Windows session-0 pitfalls,
+   and the runbook for "did not print" reports, see **[`printing.md`](printing.md)**.
 3. **Email** the PDF as an attachment via SMTP.
 
 All three are optional and independently toggled in config.
@@ -59,9 +61,11 @@ GUI's "SMTP Password" field and click Save; it persists across restarts.
 | Component | Purpose | Auto-detected locations |
 |-----------|---------|------------------------|
 | **Chrome / Chromium** | HTML → PDF rendering | `Program Files`, `Program Files (x86)`, `LocalAppData`, `PATH`, exe dir |
-| **SumatraPDF** | Silent printing | `Program Files\SumatraPDF`, `LocalAppData\SumatraPDF`, exe dir, `PATH` |
+| **PDFtoPrinter / Acrobat / SumatraPDF** | Silent printing | see [`printing.md`](printing.md) |
 
-Set explicit paths in config if auto-detection fails on a given machine.
+Set `chromePath` explicitly in config if auto-detection fails. Print
+engines are detected at runtime; bundled `PDFtoPrinter.exe` is the
+primary engine.
 
 ---
 
@@ -119,7 +123,7 @@ Sender.ProcessOrder()
        ├─ Build InvoiceData from order + config
        ├─ Generator.Generate(ctx, data) → pdfBytes
        ├─ Save PDF  → SendOrderDir/history/<orderNum>/invoice_<orderNum>.pdf
-       ├─ [if printAfterOrder] PrintPDF via SumatraPDF -silent -print-to[-default]
+       ├─ [if printAfterOrder] PrintPDF (engine: PDFtoPrinter → Adobe → Sumatra; see printing.md)
        └─ [if emailAfterOrder] email.Sender.SendInvoice → SMTP with PDF attachment
 ```
 
@@ -174,4 +178,5 @@ Failure cases:
 | Logo missing in PDF | Chrome navigated to `data:text/html` URI (opaque origin blocks images) | Use `file://` temp file |
 | Logo wrong format | MIME type hardcoded as `image/png` but file is JPEG | Use `http.DetectContentType` |
 | No logs in `server.log` | GUI `logSvc` falls back to stderr (discarded in GUI mode) | Check status bar instead; GUI log is in `ui.log` |
-| SumatraPDF not found | Not installed / not on PATH | Set `sumatraPdfPath` in config or install SumatraPDF |
+| Print engine = SumatraPDF / Adobe instead of PDFtoPrinter | `PDFtoPrinter.exe` + `qpdf29.dll` + `resource.dat` missing from install dir | Re-deploy via the installer, or drop the three files into `C:\Program Files\erp-connector\` manually (see `printing.md`) |
+| Daemon log says "PDF printed" but no paper | SumatraPDF "exit 0 silent failure", or WSD-port printer used from session 0 | See decision tree in `printing.md` |
