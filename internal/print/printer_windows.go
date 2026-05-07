@@ -62,17 +62,33 @@ func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, 
 		}
 	}
 
-	// Prefer Adobe Reader / Acrobat — its /t silent print is the de-facto
-	// reliable path for unattended PDF printing on Windows.
+	// Engine preference (best → worst for service-mode printing):
+	//   1. PDFtoPrinter.exe — purpose-built for unattended/service printing,
+	//      works in Windows session 0, no user-session dependencies.
+	//   2. Adobe Reader / Acrobat — reliable in interactive sessions only;
+	//      hangs in session 0 (no desktop / window station) so unsuitable
+	//      when the daemon runs as a Windows service.
+	//   3. SumatraPDF -silent — exits 0 without producing paper on certain
+	//      driver/printer combinations; last-resort fallback.
+	if toolPath := detectPDFtoPrinter(); toolPath != "" {
+		if log != nil {
+			log.Info(fmt.Sprintf("print.PrintPDF: using PDFtoPrinter (%s) — service-safe unattended printer", toolPath))
+		}
+		return printPDFViaPDFtoPrinter(ctx, toolPath, pdfPath, printerName, log)
+	}
+
 	if acrobatPath := detectAcrobat(); acrobatPath != "" {
 		if log != nil {
-			log.Info(fmt.Sprintf("print.PrintPDF: using Adobe (%s) — preferred over SumatraPDF for silent print reliability", acrobatPath))
+			log.Warn(fmt.Sprintf(
+				"print.PrintPDF: PDFtoPrinter not found; falling back to Adobe (%s). Adobe reliably prints in interactive sessions but typically hangs when invoked from a Windows service (session 0).",
+				acrobatPath,
+			))
 		}
 		return printPDFViaAcrobat(ctx, acrobatPath, pdfPath, printerName, log)
 	}
 
 	if log != nil {
-		log.Info("print.PrintPDF: Adobe Reader/Acrobat not detected; falling back to SumatraPDF (less reliable in -silent mode on some drivers)")
+		log.Warn("print.PrintPDF: neither PDFtoPrinter nor Adobe Reader/Acrobat detected; falling back to SumatraPDF (less reliable in -silent mode on some drivers)")
 	}
 	return printPDFViaSumatra(ctx, pdfPath, printerName, sumatraPDFPath, log)
 }
