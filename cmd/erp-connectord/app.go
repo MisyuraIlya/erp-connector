@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"erp-connector/internal/api"
 	"erp-connector/internal/config"
@@ -18,6 +20,7 @@ import (
 	"erp-connector/internal/logger"
 	"erp-connector/internal/pdf"
 	"erp-connector/internal/platform/autostart"
+	"erp-connector/internal/print"
 	"erp-connector/internal/secrets"
 )
 
@@ -98,6 +101,10 @@ func (a *serverApp) Start() error {
 		cfg.PDF.RemoteTemplateBaseURL, len(cfg.PDF.RemoteTokens),
 		cfg.PDF.ChromePath, cfg.PDF.SumatraPDFPath, cfg.PDF.PrinterName,
 	))
+
+	if cfg.PDF.PrintAfterOrder {
+		logVisiblePrintersAndValidate(logSvc, cfg.PDF.PrinterName)
+	}
 	var postHooks []hasavshevet.PostOrderHook
 	if cfg.PDF.PrintAfterOrder || cfg.PDF.EmailAfterOrder {
 		chromePath := cfg.PDF.ChromePath
@@ -180,4 +187,76 @@ func (a *serverApp) Errors() <-chan error {
 
 func (a *serverApp) Logger() autostart.Logger {
 	return a.logSvc
+}
+
+// logVisiblePrintersAndValidate enumerates the printers visible to the daemon
+// process and validates the configured PrinterName against that list. The
+// daemon typically runs as a Windows service under LocalSystem, which sees
+// only machine-wide printers — per-user printers from the interactive user's
+// session are invisible. This logs both the snapshot and a clear WARN when
+// the configured printer is missing or uses a WSD port (incompatible with
+// services). The data is invaluable when troubleshooting silent print failures.
+func logVisiblePrintersAndValidate(logSvc logger.LoggerService, configuredName string) {
+	account := "<unknown>"
+	if u, err := user.Current(); err == nil {
+		account = u.Username
+	}
+
+	printers, err := print.EnumeratePrinters()
+	if err != nil {
+		logSvc.Warn(fmt.Sprintf("EnumeratePrinters failed (account=%s): %v — print issues will be hard to diagnose", account, err))
+		return
+	}
+	if len(printers) == 0 {
+		logSvc.Warn(fmt.Sprintf("no printers visible to daemon (account=%s). If running as a service under LocalSystem, install the printer machine-wide or run the service under a user account that has the printer.", account))
+		return
+	}
+
+	descriptions := make([]string, 0, len(printers))
+	for _, p := range printers {
+		descriptions = append(descriptions, fmt.Sprintf("%s [port=%s, driver=%s]", p.Name, p.PortName, p.DriverName))
+	}
+	logSvc.Info(fmt.Sprintf("printers visible to daemon (account=%s, count=%d): %s",
+		account, len(printers), strings.Join(descriptions, "; "),
+	))
+
+	if configuredName == "" {
+		logSvc.Info("PrinterName empty in config — system default will be used at print time")
+		return
+	}
+
+	matched := print.FindPrinter(printers, configuredName)
+	if matched == nil {
+		logSvc.Warn(fmt.Sprintf(
+			"configured PrinterName=%q is NOT in the daemon's visible printer list. "+
+				"If the daemon runs as LocalSystem, per-user printers are invisible — install the printer for all users, "+
+				"or pick one of: %s",
+			configuredName, strings.Join(printerNames(printers), ", "),
+		))
+		return
+	}
+
+	if print.IsServiceUnsafePort(matched.PortName) {
+		logSvc.Warn(fmt.Sprintf(
+			"configured PrinterName=%q uses port=%q (WSD). WSD printers do NOT work reliably from a service "+
+				"running as LocalSystem because WSD requires the user-session Function Discovery service. "+
+				"Print jobs will appear to succeed (SumatraPDF returns 0) but never reach the device. "+
+				"Install a Standard TCP/IP Port for the same physical printer and switch PrinterName to that.",
+			configuredName, matched.PortName,
+		))
+		return
+	}
+
+	logSvc.Info(fmt.Sprintf(
+		"configured PrinterName=%q resolved to port=%q driver=%q (service-safe)",
+		matched.Name, matched.PortName, matched.DriverName,
+	))
+}
+
+func printerNames(printers []print.PrinterInfo) []string {
+	out := make([]string, 0, len(printers))
+	for _, p := range printers {
+		out = append(out, p.Name)
+	}
+	return out
 }

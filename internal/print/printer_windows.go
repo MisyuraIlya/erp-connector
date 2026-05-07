@@ -37,6 +37,43 @@ func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, 
 		return fmt.Errorf("SumatraPDF not found; install it or set the path in config")
 	}
 
+	// Pre-flight: check the configured printer is actually visible to this
+	// process. SumatraPDF in -silent mode exits 0 even when the printer is
+	// missing or the port handshake fails (e.g. WSD ports under LocalSystem),
+	// so any signal we can extract here is more reliable than its exit code.
+	if printerName != "" {
+		if printers, perr := EnumeratePrinters(); perr == nil {
+			match := FindPrinter(printers, printerName)
+			switch {
+			case match == nil:
+				if log != nil {
+					names := make([]string, 0, len(printers))
+					for _, p := range printers {
+						names = append(names, p.Name)
+					}
+					log.Warn(fmt.Sprintf(
+						"print.PrintPDF: configured printer %q is not visible to this process; visible: [%s]. "+
+							"Print will likely fail silently. If running as a service, the printer may be installed only for the interactive user.",
+						printerName, strings.Join(names, ", "),
+					))
+				}
+			case IsServiceUnsafePort(match.PortName):
+				if log != nil {
+					log.Warn(fmt.Sprintf(
+						"print.PrintPDF: printer %q uses port %q (WSD). WSD ports do not work from a service running as LocalSystem; SumatraPDF will exit 0 but no job will reach the device. Switch to a Standard TCP/IP Port equivalent.",
+						printerName, match.PortName,
+					))
+				}
+			default:
+				if log != nil {
+					log.Info(fmt.Sprintf("print.PrintPDF: printer %q resolved (port=%q driver=%q)", match.Name, match.PortName, match.DriverName))
+				}
+			}
+		} else if log != nil {
+			log.Warn(fmt.Sprintf("print.PrintPDF: EnumeratePrinters pre-flight failed: %v", perr))
+		}
+	}
+
 	args := []string{"-silent"}
 	if printerName != "" {
 		args = append(args, "-print-to", printerName)
