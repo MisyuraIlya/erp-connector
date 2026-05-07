@@ -49,8 +49,9 @@ type printerInfo2W struct {
 }
 
 var (
-	modWinspool       = windows.NewLazySystemDLL("winspool.drv")
-	procEnumPrintersW = modWinspool.NewProc("EnumPrintersW")
+	modWinspool            = windows.NewLazySystemDLL("winspool.drv")
+	procEnumPrintersW      = modWinspool.NewProc("EnumPrintersW")
+	procGetDefaultPrinterW = modWinspool.NewProc("GetDefaultPrinterW")
 )
 
 // EnumeratePrinters returns the printers visible to the calling process —
@@ -124,4 +125,23 @@ func FindPrinter(printers []PrinterInfo, name string) *PrinterInfo {
 // Standard TCP/IP Port equivalent of the same physical printer instead.
 func IsServiceUnsafePort(port string) bool {
 	return strings.HasPrefix(strings.ToUpper(port), "WSD-")
+}
+
+// defaultPrinterName returns the user/account-default printer via
+// GetDefaultPrinterW. Empty string + error if no default is set.
+func defaultPrinterName() (string, error) {
+	var size uint32
+	procGetDefaultPrinterW.Call(0, uintptr(unsafe.Pointer(&size)))
+	if size == 0 {
+		return "", fmt.Errorf("no default printer set for this account")
+	}
+	buf := make([]uint16, size)
+	r, _, e := procGetDefaultPrinterW.Call(
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(unsafe.Pointer(&size)),
+	)
+	if r == 0 {
+		return "", fmt.Errorf("GetDefaultPrinterW: %w", e)
+	}
+	return windows.UTF16ToString(buf), nil
 }

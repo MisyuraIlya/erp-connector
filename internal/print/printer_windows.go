@@ -14,33 +14,21 @@ import (
 	"erp-connector/internal/logger"
 )
 
-// PrintPDF sends a PDF file to the printer via SumatraPDF.
+// PrintPDF sends a PDF file to the printer.
+//
+// Engine selection: Adobe Reader / Acrobat is preferred when available
+// (more reliable silent print across V4 / Class drivers and TCP/IP queues),
+// falling back to SumatraPDF otherwise. SumatraPDF -silent has been observed
+// to exit 0 without producing paper on certain driver+printer combinations,
+// so Acrobat-first is the safer default.
+//
 // If printerName is empty, the system default printer is used.
-// log may be nil; when non-nil, diagnostic info is recorded around the print call.
+// log may be nil; when non-nil, diagnostic info is recorded around the call.
 func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, log logger.LoggerService) error {
-	sumatraPath := resolveSumatraPDF(sumatraPDFPath)
-	if log != nil {
-		printerDisplay := printerName
-		if printerDisplay == "" {
-			printerDisplay = "<system default>"
-		}
-		resolvedDisplay := sumatraPath
-		if resolvedDisplay == "" {
-			resolvedDisplay = "<not found>"
-		}
-		log.Info(fmt.Sprintf(
-			"print.PrintPDF: pdfPath=%q printer=%s configuredSumatra=%q resolvedSumatra=%s",
-			pdfPath, printerDisplay, sumatraPDFPath, resolvedDisplay,
-		))
-	}
-	if sumatraPath == "" {
-		return fmt.Errorf("SumatraPDF not found; install it or set the path in config")
-	}
-
 	// Pre-flight: check the configured printer is actually visible to this
-	// process. SumatraPDF in -silent mode exits 0 even when the printer is
-	// missing or the port handshake fails (e.g. WSD ports under LocalSystem),
-	// so any signal we can extract here is more reliable than its exit code.
+	// process. Both engines silently fail when the printer is invisible to
+	// the calling account or uses a service-unsafe port, so logging this
+	// up-front makes silent failures diagnosable from logs alone.
 	if printerName != "" {
 		if printers, perr := EnumeratePrinters(); perr == nil {
 			match := FindPrinter(printers, printerName)
@@ -60,7 +48,7 @@ func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, 
 			case IsServiceUnsafePort(match.PortName):
 				if log != nil {
 					log.Warn(fmt.Sprintf(
-						"print.PrintPDF: printer %q uses port %q (WSD). WSD ports do not work from a service running as LocalSystem; SumatraPDF will exit 0 but no job will reach the device. Switch to a Standard TCP/IP Port equivalent.",
+						"print.PrintPDF: printer %q uses port %q (WSD). WSD ports do not work from a service running as LocalSystem. Switch to a Standard TCP/IP Port equivalent.",
 						printerName, match.PortName,
 					))
 				}
@@ -72,6 +60,43 @@ func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, 
 		} else if log != nil {
 			log.Warn(fmt.Sprintf("print.PrintPDF: EnumeratePrinters pre-flight failed: %v", perr))
 		}
+	}
+
+	// Prefer Adobe Reader / Acrobat — its /t silent print is the de-facto
+	// reliable path for unattended PDF printing on Windows.
+	if acrobatPath := detectAcrobat(); acrobatPath != "" {
+		if log != nil {
+			log.Info(fmt.Sprintf("print.PrintPDF: using Adobe (%s) — preferred over SumatraPDF for silent print reliability", acrobatPath))
+		}
+		return printPDFViaAcrobat(ctx, acrobatPath, pdfPath, printerName, log)
+	}
+
+	if log != nil {
+		log.Info("print.PrintPDF: Adobe Reader/Acrobat not detected; falling back to SumatraPDF (less reliable in -silent mode on some drivers)")
+	}
+	return printPDFViaSumatra(ctx, pdfPath, printerName, sumatraPDFPath, log)
+}
+
+// printPDFViaSumatra is the legacy SumatraPDF path. Kept as a fallback for
+// machines that don't have Adobe Reader installed.
+func printPDFViaSumatra(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, log logger.LoggerService) error {
+	sumatraPath := resolveSumatraPDF(sumatraPDFPath)
+	if log != nil {
+		printerDisplay := printerName
+		if printerDisplay == "" {
+			printerDisplay = "<system default>"
+		}
+		resolvedDisplay := sumatraPath
+		if resolvedDisplay == "" {
+			resolvedDisplay = "<not found>"
+		}
+		log.Info(fmt.Sprintf(
+			"print.sumatra: pdfPath=%q printer=%s configuredSumatra=%q resolvedSumatra=%s",
+			pdfPath, printerDisplay, sumatraPDFPath, resolvedDisplay,
+		))
+	}
+	if sumatraPath == "" {
+		return fmt.Errorf("no PDF print engine available: Adobe Reader/Acrobat not installed and SumatraPDF not found")
 	}
 
 	args := []string{"-silent"}
@@ -86,7 +111,7 @@ func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, 
 	defer cancel()
 
 	if log != nil {
-		log.Info(fmt.Sprintf("print.PrintPDF exec: %s %s", sumatraPath, strings.Join(args, " ")))
+		log.Info(fmt.Sprintf("print.sumatra exec: %s %s", sumatraPath, strings.Join(args, " ")))
 	}
 
 	cmd := exec.CommandContext(printCtx, sumatraPath, args...)
@@ -96,7 +121,7 @@ func PrintPDF(ctx context.Context, pdfPath, printerName, sumatraPDFPath string, 
 		return fmt.Errorf("SumatraPDF print failed (exit: %v, output: %q): %w", cmd.ProcessState.ExitCode(), trimmedOutput, err)
 	}
 	if log != nil {
-		log.Info(fmt.Sprintf("print.PrintPDF exec ok (exit=%d, output=%q)", cmd.ProcessState.ExitCode(), trimmedOutput))
+		log.Info(fmt.Sprintf("print.sumatra exec ok (exit=%d, output=%q) — note: SumatraPDF returns 0 even on silent failure; verify physical print", cmd.ProcessState.ExitCode(), trimmedOutput))
 	}
 	return nil
 }
