@@ -52,18 +52,24 @@ jobs:
           go build -trimpath -ldflags "-s -w -H=windowsgui" -o "dist/bin/erp-connector.exe" ./cmd/erp-connector
           go build -trimpath -ldflags "-s -w" -o "dist/bin/erp-connectord.exe" ./cmd/erp-connectord
 
-      - name: Bundle PDFtoPrinter.exe
+      - name: Bundle PDFtoPrinter
         shell: bash
-        # PDFtoPrinter is freeware (Eric Mayer / Columbia U.) explicitly
-        # licensed for free redistribution. We bundle it because PDF readers
-        # (Adobe Reader, SumatraPDF) hang or silently fail when invoked from
-        # a Windows service (session 0); PDFtoPrinter is purpose-built for
-        # unattended printing and works correctly there.
+        # PDFtoPrinter is freeware by Edward Mendelson (Columbia U.),
+        # licensed for redistribution. The maintained source / binaries
+        # are at https://github.com/emendelson/pdftoprinter . We bundle
+        # PDFtoPrinter because PDF readers (Adobe Reader, SumatraPDF)
+        # hang or silently fail when invoked from a Windows service
+        # (session 0 has no interactive desktop / window station);
+        # PDFtoPrinter is purpose-built for unattended printing and
+        # works correctly there. Modern PDFtoPrinter requires qpdf29.dll
+        # and resource.dat alongside the EXE.
         run: |
           set -euo pipefail
-          curl -fsSL --retry 3 -o "dist/bin/PDFtoPrinter.exe" "http://www.columbia.edu/~em36/PDFtoPrinter.exe"
-          ls -la dist/bin/PDFtoPrinter.exe
-          file dist/bin/PDFtoPrinter.exe || true
+          base="https://raw.githubusercontent.com/emendelson/pdftoprinter/main"
+          for f in PDFtoPrinter.exe qpdf29.dll resource.dat; do
+            curl -fsSL --retry 3 -o "dist/bin/$f" "$base/$f"
+          done
+          ls -la dist/bin/PDFtoPrinter.exe dist/bin/qpdf29.dll dist/bin/resource.dat
 
       - name: Build installer
         shell: powershell
