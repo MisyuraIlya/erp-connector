@@ -237,6 +237,7 @@ type stockMove struct {
 	ItemKey     string
 	ItemName    string
 	Quantity    string
+	Packs       string // number of packages (line33 / אריזות)
 	Price       string // originalPrice (line24)
 	DiscountPrc string
 	Unit        string
@@ -293,7 +294,7 @@ func buildDOCRecord(h stockHeader, m stockMove) []byte {
 	buf.Write(w("", f["line30"]))
 	buf.Write(w("", f["line31"]))
 	buf.Write(w("", f["line32"]))
-	buf.Write(w("", f["line33"]))
+	buf.Write(w(m.Packs, f["line33"])) // אריזות / packs
 	buf.Write(w("0", f["line34"]))
 	buf.Write(w(h.Phone, f["line35"]))
 	buf.Write(w(h.ShortDate, f["line36"]))

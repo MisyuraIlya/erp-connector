@@ -22,6 +22,9 @@ type SendOrderLineItem struct {
 	Title         string   `json:"title"`
 	SKU           string   `json:"sku"`
 	Quantity      *float64 `json:"quantity"`
+	// Packs is the number of packages (אריזות / IMOVEIN line33). Optional: older
+	// callers omit it, in which case line33 stays blank (legacy behaviour).
+	Packs         *float64 `json:"packs"`
 	OriginalPrice *float64 `json:"originalPrice"`
 	SinglePrice   *float64 `json:"singlePrice"`
 	TotalPrice    *float64 `json:"totalPrice"`

@@ -90,6 +90,46 @@ func TestBuildDOCRecord_Length(t *testing.T) {
 	}
 }
 
+// line33Offset returns the 0-based byte offset of line33 within a DOC record
+// (sum of field widths line2..line32, which are written before it).
+func line33Offset() int {
+	offset := 0
+	for i := 2; i <= 32; i++ {
+		offset += imoveInFieldLengths[fmt.Sprintf("line%d", i)]
+	}
+	return offset
+}
+
+// TestBuildDOCRecord_Line33Packs verifies the packs count lands in line33 (אריזות)
+// and that an unset Packs leaves the field blank (legacy behaviour, backward compat).
+func TestBuildDOCRecord_Line33Packs(t *testing.T) {
+	hdr := stockHeader{
+		MyID: 1, DocumentID: 30, WareHouse: 1, ShortDate: "01/01/2026",
+		VatPrc: "18.00", DiscountPrcR: "0.00", Copies: "1", Rate: "1.0000",
+	}
+	offset := line33Offset()
+	width := imoveInFieldLengths["line33"]
+
+	withPacks := buildDOCRecord(hdr, stockMove{
+		ItemKey: "1298", ItemName: "X", Quantity: "11.00", Packs: "1.00",
+		Price: "51.00", DiscountPrc: "0.00", Unit: "יח'",
+	})
+	got := string(withPacks[offset : offset+width])
+	want := string(padW1255("1.00", width))
+	if got != want {
+		t.Errorf("line33 with packs = %q, want %q", got, want)
+	}
+
+	noPacks := buildDOCRecord(hdr, stockMove{
+		ItemKey: "1298", ItemName: "X", Quantity: "11.00", Packs: "",
+		Price: "51.00", DiscountPrc: "0.00", Unit: "יח'",
+	})
+	blank := string(noPacks[offset : offset+width])
+	if blank != string(padW1255("", width)) {
+		t.Errorf("line33 without packs = %q, want all spaces", blank)
+	}
+}
+
 // TestGenerateDOC_RowCount verifies generateDOC produces one row per move.
 func TestGenerateDOC_RowCount(t *testing.T) {
 	hdr := stockHeader{

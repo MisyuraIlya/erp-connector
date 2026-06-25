@@ -36,6 +36,7 @@ type OrderLineItem struct {
 	Title         string
 	SKU           string
 	Quantity      float64
+	Packs         float64 // number of packages → IMOVEIN line33 (אריזות)
 	OriginalPrice float64
 	SinglePrice   float64
 	TotalPrice    float64
@@ -285,10 +286,17 @@ func buildIMOVEIN(orderNum int64, account accountInfo, req OrderRequest, rate fl
 
 	moves := make([]stockMove, 0, len(req.Details))
 	for _, d := range req.Details {
+		// Packs (line33/אריזות): only emit when known (>0) so legacy callers that
+		// omit packs keep writing a blank field, identical to prior behaviour.
+		packs := ""
+		if d.Packs > 0 {
+			packs = fmt.Sprintf("%.2f", d.Packs)
+		}
 		moves = append(moves, stockMove{
 			ItemKey:     d.SKU,
 			ItemName:    sanitizeField(d.Title),
 			Quantity:    fmt.Sprintf("%.2f", d.Quantity),
+			Packs:       packs,
 			Price:       fmt.Sprintf("%.2f", d.OriginalPrice),
 			DiscountPrc: fmt.Sprintf("%.2f", d.Discount),
 			Unit:        "יח'",

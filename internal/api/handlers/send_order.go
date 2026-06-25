@@ -117,10 +117,15 @@ func NewSendOrderHandler(queue *hasavshevet.OrderQueue) http.HandlerFunc {
 		// Map DTO → internal request
 		details := make([]hasavshevet.OrderLineItem, 0, len(req.Details))
 		for _, d := range req.Details {
+			var packs float64
+			if d.Packs != nil {
+				packs = *d.Packs
+			}
 			details = append(details, hasavshevet.OrderLineItem{
 				Title:         d.Title,
 				SKU:           d.SKU,
 				Quantity:      *d.Quantity,
+				Packs:         packs,
 				OriginalPrice: *d.OriginalPrice,
 				SinglePrice:   *d.SinglePrice,
 				TotalPrice:    *d.TotalPrice,
